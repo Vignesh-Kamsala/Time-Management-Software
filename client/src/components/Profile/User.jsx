@@ -17,7 +17,8 @@ export default function UsersList() {
       if (!currentUser) return;
 
       try {
-       
+       console.log(currentUser)
+       setUser(currentUser)
         
       } catch (err) {
         toast.error("Error fetching user");
@@ -55,7 +56,7 @@ export default function UsersList() {
         ) : user ? (
           <Card className="mb-4">
             <CardHeader>
-              <CardTitle>{user.firstName}</CardTitle>
+              <CardTitle>{user.displayName}</CardTitle>
             </CardHeader>
             <CardContent>
               <p>Email: {user.email}</p>

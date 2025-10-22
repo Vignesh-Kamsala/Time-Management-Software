@@ -6,6 +6,7 @@ import './App.css'
 import SignUpForm from './components/auth/SignUp.jsx'
 import { Toaster } from "react-hot-toast";
 import UsersList from './components/Profile/User.jsx'
+import MainComponent from './components/Dashbord/DashBoard.jsx'
 
 function App() {
 
@@ -22,6 +23,9 @@ function App() {
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUpForm />} />
     <Route path="/user" element={<UsersList />} />
+        <Route path="/userList" element={<MainComponent />} />
+
+    
         </Routes>
       </Router>
     </ThemeProvider>
