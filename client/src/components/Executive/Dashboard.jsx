@@ -1,6 +1,6 @@
 import { useContext } from "react";
 import { ThemeContext } from "@/context/ThemeContext";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Card, CardHeader, CardContent } from "@/components/ui/card";
 
 export default function Dashboard() {
   const { isDark } = useContext(ThemeContext);
@@ -16,26 +16,32 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className={isDark ? "bg-gray-900 text-white" : "bg-white text-black"}>
+    <div className={isDark ? "bg-gray-900 text-white" : "bg-gray-100 text-black"}>
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
 
-      <Card className="mb-4">
-        <CardHeader>Today's Meetings</CardHeader>
-        <CardContent>
-          {meetings.map((m, i) => (
-            <p key={i}>{m.time} - {m.title} ({m.venue})</p>
-          ))}
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader>Today's Meetings</CardHeader>
+          <CardContent>
+            {meetings.map((m, i) => (
+              <p key={i} className="py-1 border-b last:border-b-0">
+                <span className="font-medium">{m.time}</span> - {m.title} ({m.venue})
+              </p>
+            ))}
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>Today's Tasks</CardHeader>
-        <CardContent>
-          {tasks.map((t, i) => (
-            <p key={i}>{t.time} - {t.task}</p>
-          ))}
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>Today's Tasks</CardHeader>
+          <CardContent>
+            {tasks.map((t, i) => (
+              <p key={i} className="py-1 border-b last:border-b-0">
+                <span className="font-medium">{t.time}</span> - {t.task}
+              </p>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
