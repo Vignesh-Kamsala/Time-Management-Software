@@ -29,6 +29,7 @@ import MainComponent from "./components/Dashbord/DashBoard.jsx";
 import "./App.css";
 import Dashboard from "./components/Executive/Dashboard.jsx";
 import ExecutiveLayout from "./components/Executive/Layout.jsx";
+import MyTimePickerComponent from "./components/Clock.jsx";
 
 function App() {
   return (
@@ -40,6 +41,7 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUpForm />} />
+                        <Route path="/clock" element={<MyTimePickerComponent />} />
 
           {/* 👤 User Routes */}
           <Route path="/user" element={<UsersList />} />
@@ -61,6 +63,8 @@ function App() {
             <Route path="rearrange" element={<RearrangeAppointments />} />
             <Route path="reports" element={<SecretaryReports />} />
             <Route path="notifications" element={<Notifications />} />
+
+
           </Route>
         </Routes>
       </Router>

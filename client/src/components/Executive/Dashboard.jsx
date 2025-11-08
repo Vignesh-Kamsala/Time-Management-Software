@@ -1,4 +1,4 @@
-import { useContext, useMemo } from "react";
+import React, { useContext, useMemo } from "react";
 import { ThemeContext } from "@/context/ThemeContext";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,63 +47,17 @@ export default function Dashboard() {
   ];
 
   const nextUp = [
-    {
-      time: "09:30 AM",
-      title: "Deep Work Block",
-      type: "TASK",
-      meta: "Strategy draft",
-    },
-    {
-      time: "10:30 AM",
-      title: "Project Apollo Sync",
-      type: "MEETING",
-      meta: "Room 3A",
-      venue: "Room 3A",
-    },
-    {
-      time: "12:00 PM",
-      title: "Client Call – Northwind",
-      type: "MEETING",
-      meta: "Zoom",
-      isVirtual: true,
-    },
-    {
-      time: "01:00 PM",
-      title: "Lunch",
-      type: "BREAK",
-      meta: "Cafeteria",
-    },
+    { time: "09:30 AM", title: "Deep Work Block", type: "TASK", meta: "Strategy draft" },
+    { time: "10:30 AM", title: "Project Apollo Sync", type: "MEETING", meta: "Room 3A", venue: "Room 3A" },
+    { time: "12:00 PM", title: "Client Call – Northwind", type: "MEETING", meta: "Zoom", isVirtual: true },
+    { time: "01:00 PM", title: "Lunch", type: "BREAK", meta: "Cafeteria" },
   ];
 
   const meetings = [
-    {
-      time: "10:30 AM – 11:00 AM",
-      title: "Project Apollo Sync",
-      venue: "Room 3A",
-      attendees: ["Asha", "Rohan", "Meera"],
-      status: "Confirmed",
-    },
-    {
-      time: "12:00 PM – 12:45 PM",
-      title: "Client Call – Northwind",
-      venue: "Zoom",
-      attendees: ["You", "Client Team"],
-      status: "Awaiting RSVP",
-    },
-    {
-      time: "02:15 PM – 03:00 PM",
-      title: "Budget Review",
-      venue: "Room 2B",
-      attendees: ["Finance", "Ops"],
-      status: "Confirmed",
-    },
-    {
-      time: "04:00 PM – 04:30 PM",
-      title: "1:1 – Mentorship",
-      venue: "Room 1C",
-      attendees: ["You", "Intern"],
-      status: "Tentative",
-    },
+    { time: "10:30 AM – 11:00 AM", title: "Project Apollo Sync", venue: "Room 3A", attendees: ["Asha","Rohan","Meera"], status: "Confirmed" },
+    { time: "12:00 PM – 12:45 PM", title: "Client Call – Northwind", venue: "Zoom", attendees: ["You","Client Team"], status: "Awaiting RSVP" },
+    { time: "02:15 PM – 03:00 PM", title: "Budget Review", venue: "Room 2B", attendees: ["Finance","Ops"], status: "Confirmed" },
+    { time: "04:00 PM – 04:30 PM", title: "1:1 – Mentorship", venue: "Room 1C", attendees: ["You","Intern"], status: "Tentative" },
   ];
 
   const tasks = [
@@ -112,10 +66,7 @@ export default function Dashboard() {
     { time: "03:15 PM", task: "Email follow-ups", priority: "Low" },
   ];
 
-  const leaves = [
-    { date: "Nov 12", label: "Casual Leave" },
-    { date: "Nov 22", label: "Half-day (PM)" },
-  ];
+  const leaves = [{ date: "Nov 12", label: "Casual Leave" }, { date: "Nov 22", label: "Half-day (PM)" }];
 
   // ---- Styling helpers ----
   const base = isDark ? "bg-slate-950 text-slate-100" : "bg-slate-50 text-slate-900";
@@ -130,40 +81,39 @@ export default function Dashboard() {
     const cfg = map[status] ?? map["Tentative"];
     const Icon = cfg.icon;
     return (
-      <Badge variant={cfg.variant} className="gap-1">
-        <Icon className="h-3.5 w-3.5" /> {status}
+      <Badge variant={cfg.variant} className="gap-1 inline-flex items-center">
+        <Icon className="h-3.5 w-3.5" /> <span className="text-xs">{status}</span>
       </Badge>
     );
   };
 
   return (
-    <div className={`${base} min-h-screen`}> 
-      {/* Header */}
-      <div
-        className={
-          (isDark
-            ? "bg-gradient-to-r from-indigo-900 via-indigo-700 to-indigo-600"
-            : "bg-gradient-to-r from-indigo-500 via-indigo-400 to-indigo-300") +
-          " sticky top-0 z-40 shadow-sm"
-        }
-      >
+    <div className={`${base} min-h-screen`}>
+      {/* Top header: search + actions */}
+      <div className="sticky top-0 z-40">
         <div className="mx-auto max-w-7xl px-4 py-4 md:py-6">
-          {/* Top toolbar */}
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-2 md:gap-3 w-full md:w-auto">
-              <Input
-                placeholder="Search meetings, people, projects..."
-                className="bg-white/90 md:min-w-[320px] shadow-sm border-0 focus-visible:ring-2"
-              />
-              <Button variant="secondary" className="gap-2" size="sm">
-                <Search className="h-4 w-4" /> Search
+          {/* Search + Actions container */}
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            {/* Left: search (allows shrinking, won't push actions) */}
+            <div className="flex items-center gap-3 w-full md:w-auto">
+              <div className="flex-1 min-w-0">
+                <Input
+                  placeholder="Search meetings, people, projects..."
+                  className="w-full md:min-w-[360px] shadow-sm border-0 focus-visible:ring-2"
+                />
+              </div>
+
+              <Button size="sm" className="ml-1 shrink-0" variant="secondary">
+                <Search className="h-4 w-4" /> <span className="hidden md:inline">Search</span>
               </Button>
             </div>
-            <div className="flex items-center gap-2 md:gap-3 self-stretch md:self-auto">
+
+            {/* Right: actions */}
+            <div className="flex flex-wrap items-center gap-2 md:gap-3 justify-end">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button className="gap-2" size="sm">
-                    <Plus className="h-4 w-4" /> New
+                    <Plus className="h-4 w-4" /> <span className="hidden sm:inline">New</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -173,48 +123,44 @@ export default function Dashboard() {
                   <DropdownMenuItem>Add Leave</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button variant="secondary" size="sm" className="gap-2">
-                <UserPlus className="h-4 w-4" /> Invite
+
+              <Button size="sm" variant="secondary" className="gap-2 shrink-0">
+                <UserPlus className="h-4 w-4" /> <span className="hidden md:inline">Invite</span>
               </Button>
             </div>
           </div>
 
           {/* Title row */}
-          <div className="mt-4 flex flex-col md:flex-row md:items-end md:justify-between gap-2">
+          <div className="mt-4 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-2xl md:text-3xl font-semibold tracking-tight leading-tight">Dashboard</h1>
-              <p className="opacity-90 mt-1 flex items-center gap-2">
+              <p className="mt-1 flex items-center gap-2 text-sm opacity-80">
                 <CalendarDays className="h-4 w-4" /> {localeDate}
               </p>
             </div>
-            <div className="flex gap-2 md:gap-3">
-              <Button size="sm" variant="outline" className="bg-white/20 backdrop-blur">
-                Today
-              </Button>
-              <Button size="sm" variant="outline" className="bg-white/20 backdrop-blur">
-                Week
-              </Button>
-              <Button size="sm" className="gap-2">
-                <Plus className="h-4 w-4" /> New Meeting
-              </Button>
+
+            <div className="flex flex-wrap items-center gap-2 md:gap-3">
+              <Button size="sm" variant="outline" className="shrink-0">Today</Button>
+              <Button size="sm" variant="outline" className="shrink-0">Week</Button>
+              <Button size="sm" className="gap-2 shrink-0"><Plus className="h-4 w-4" /> New Meeting</Button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="mx-auto max-w-7xl px-4 -mt-6 md:-mt-8 pb-10">
+      {/* MAIN CONTENT - NOTICE: removed negative top-margin to avoid overlapping */}
+      <div className="mx-auto max-w-7xl px-4 mt-6 pb-12">
         {/* KPI Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {kpis.map(({ label, value, icon: Icon }, i) => (
-            <Card key={i} className={`${cardTone} border-0 shadow-sm`}> 
+            <Card key={i} className={`${cardTone} border-0 shadow-sm`}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs uppercase tracking-wide opacity-70">{label}</p>
                     <p className="text-2xl font-semibold mt-1">{value}</p>
                   </div>
-                  <div className="rounded-xl p-2 bg-indigo-500/10">
+                  <div className="rounded-xl p-2 bg-opacity-10">
                     <Icon className="h-5 w-5" />
                   </div>
                 </div>
@@ -223,7 +169,7 @@ export default function Dashboard() {
           ))}
         </div>
 
-        {/* Main Grid */}
+        {/* Main grid */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           {/* Next Up timeline */}
           <Card className={`${cardTone} border-0 shadow-sm lg:col-span-2`}>
@@ -231,10 +177,11 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="tracking-tight">Next Up</CardTitle>
                 <Button size="sm" variant="ghost" className="gap-2">
-                  <Search className="h-4 w-4"/> Find Slot
+                  <Search className="h-4 w-4" /> <span className="hidden sm:inline">Find Slot</span>
                 </Button>
               </div>
             </CardHeader>
+
             <CardContent className="pt-0">
               <div className="space-y-3">
                 {nextUp.map((n, i) => (
@@ -242,19 +189,21 @@ export default function Dashboard() {
                     <div className="shrink-0 mt-0.5">
                       <Badge variant="secondary">{n.time}</Badge>
                     </div>
+
                     <div className="min-w-0 flex-1">
                       <p className="font-medium truncate">{n.title}</p>
                       <div className="mt-1 flex items-center gap-3 text-sm opacity-80">
-                        {n.type === 'MEETING' ? (
+                        {n.type === "MEETING" ? (
                           n.isVirtual ? (
-                            <span className="inline-flex items-center gap-1"><Video className="h-4 w-4"/> {n.meta}</span>
+                            <span className="inline-flex items-center gap-1"><Video className="h-4 w-4" /> {n.meta}</span>
                           ) : (
-                            <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4"/> {n.meta}</span>
+                            <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" /> {n.meta}</span>
                           )
                         ) : (
-                          <span className="inline-flex items-center gap-1"><Clock4 className="h-4 w-4"/> {n.meta}</span>
+                          <span className="inline-flex items-center gap-1"><Clock4 className="h-4 w-4" /> {n.meta}</span>
                         )}
-                        <Badge variant="outline">{n.type}</Badge>
+
+                        <Badge variant="outline" className="text-xs">{n.type}</Badge>
                       </div>
                     </div>
                   </div>
@@ -263,23 +212,24 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          {/* Leaves / Notes */}
+          {/* Upcoming Leaves */}
           <Card className={`${cardTone} border-0 shadow-sm`}>
             <CardHeader className="pb-2">
               <CardTitle className="tracking-tight">Upcoming Leaves</CardTitle>
             </CardHeader>
             <CardContent className="pt-0">
               <div className="space-y-3">
-                {leaves.map((l, i) => (
-                  <div key={i} className="flex items-center justify-between rounded-xl border px-3 py-2.5">
-                    <div className="flex items-center gap-2">
-                      <CalendarDays className="h-4 w-4"/>
-                      <span className="font-medium">{l.date}</span>
+                {leaves.length ? (
+                  leaves.map((l, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-xl border px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4" />
+                        <span className="font-medium">{l.date}</span>
+                      </div>
+                      <Badge variant="outline">{l.label}</Badge>
                     </div>
-                    <Badge variant="outline">{l.label}</Badge>
-                  </div>
-                ))}
-                {!leaves.length && (
+                  ))
+                ) : (
                   <p className="text-sm opacity-70">No upcoming leaves.</p>
                 )}
               </div>
@@ -287,9 +237,9 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Secondary Grid */}
+        {/* Secondary grid */}
         <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-          {/* Meetings List */}
+          {/* Today's Meetings */}
           <Card className={`${cardTone} border-0 shadow-sm`}>
             <CardHeader className="pb-2">
               <CardTitle className="tracking-tight">Today's Meetings</CardTitle>
@@ -303,13 +253,13 @@ export default function Dashboard() {
                       {statusBadge(m.status)}
                     </div>
                     <div className="flex flex-wrap items-center gap-3 text-sm opacity-80">
-                      <span className="inline-flex items-center gap-1"><Clock4 className="h-4 w-4"/> {m.time}</span>
-                      {m.venue === 'Zoom' ? (
-                        <span className="inline-flex items-center gap-1"><Video className="h-4 w-4"/> {m.venue}</span>
+                      <span className="inline-flex items-center gap-1"><Clock4 className="h-4 w-4" /> {m.time}</span>
+                      {m.venue === "Zoom" ? (
+                        <span className="inline-flex items-center gap-1"><Video className="h-4 w-4" /> {m.venue}</span>
                       ) : (
-                        <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4"/> {m.venue}</span>
+                        <span className="inline-flex items-center gap-1"><MapPin className="h-4 w-4" /> {m.venue}</span>
                       )}
-                      <Separator orientation="vertical" className="h-4"/>
+                      <Separator orientation="vertical" className="h-4" />
                       <span className="truncate">Attendees: {m.attendees.join(", ")}</span>
                     </div>
                   </div>
@@ -324,7 +274,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between">
                 <CardTitle className="tracking-tight">Today's Tasks</CardTitle>
                 <Button size="sm" variant="ghost" className="gap-2">
-                  <Plus className="h-4 w-4"/> Add Task
+                  <Plus className="h-4 w-4" /> Add Task
                 </Button>
               </div>
             </CardHeader>
@@ -336,10 +286,8 @@ export default function Dashboard() {
                     <div className="min-w-0 flex-1">
                       <p className="font-medium truncate">{t.task}</p>
                       <div className="mt-1 text-sm opacity-80 flex items-center gap-2">
-                        Priority:
-                        <Badge variant={
-                          t.priority === 'High' ? 'destructive' : t.priority === 'Medium' ? 'default' : 'outline'
-                        }>
+                        <span>Priority:</span>
+                        <Badge variant={t.priority === "High" ? "destructive" : t.priority === "Medium" ? "default" : "outline"}>
                           {t.priority}
                         </Badge>
                       </div>
