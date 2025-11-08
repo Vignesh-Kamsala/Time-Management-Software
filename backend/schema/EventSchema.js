@@ -1,55 +1,15 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
-// This sub-schema defines the structure for a participant in an event
-const participantSchema = new mongoose.Schema({
-  user: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['Pending', 'Accepted', 'Declined'],
-    default: 'Pending'
-  }
-}, { _id: false }); // _id: false prevents creating a separate ID for this sub-document
-
-const eventSchema = new mongoose.Schema({
-  title: { 
-    type: String, 
-    required: true 
-  },
-  eventType: {
-    type: String,
-    required: true,
-    enum: ['Meeting', 'Task', 'Leave'],
-    default: 'Meeting'
-  },
-  startTime: { 
-    type: Date, 
-    required: true 
-  },
-  endTime: { 
-    type: Date, 
-    required: true 
-  },
-  venue: { 
-    type: String 
-  },
-  organizer: { 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: "User",
-    required: true
-  },
-  participants: [participantSchema],
-  status: { 
-    type: String, 
-    default: "Scheduled" // e.g., Scheduled, Cancelled
-  },
-  project: { 
-    type: String 
-  },
+const MeetingSchema = new mongoose.Schema({
+  title: { type: String, required: true }, // purpose or project
+  startTime: { type: Date, required: true },
+  endTime: { type: Date, required: true },
+  venue: { type: String },
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Executive" }, // who scheduled
+  participants: [{ type: mongoose.Schema.Types.ObjectId, ref: "Executive" }],
+  status: { type: String, default: "scheduled" }, // scheduled, cancelled, rescheduled
+  project: { type: String },
+  notified: { type: Boolean, default: false },
 }, { timestamps: true });
 
-module.exports = mongoose.model("Event", eventSchema);
-
+export default mongoose.model("Meeting", MeetingSchema);

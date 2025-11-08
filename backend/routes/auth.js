@@ -1,97 +1,66 @@
 const express = require('express');
 const router = express.Router();
-const User = require('../schema/userSchema');
+const Secretary = require('../models/SecretarySchema');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-// @route   POST api/auth/register
-// @desc    Register a new user
+// @route   POST /api/secretary/register
+// @desc    Register a new secretary
 // @access  Public
 router.post('/register', async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password } = req.body;
 
   try {
-    // 1. Check if user already exists
-    let user = await User.findOne({ email });
-    if (user) {
-      return res.status(400).json({ msg: 'User already exists' });
+    // Check if secretary already exists
+    let existing = await Secretary.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ msg: 'Secretary already exists' });
     }
 
-    // 2. Create a new user instance
-    user = new User({
-      name,
-      email,
-      password,
-      role,
-    });
+    // Create and save new secretary
+    const secretary = new Secretary({ name, email, password });
+    await secretary.save();
 
-    // 3. Save the user (password will be hashed by the pre-save hook in the schema)
-    await user.save();
+    // Generate JWT token
+    const payload = { id: secretary.id, role: secretary.role };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' });
 
-    // 4. Create a JWT payload
-    const payload = {
-      user: {
-        id: user.id,
-        role: user.role
-      },
-    };
-
-    // 5. Sign the token
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: '5h' }, // Token expires in 5 hours
-      (err, token) => {
-        if (err) throw err;
-        res.status(201).json({ token }); // Return the token
-      }
-    );
-
+    // Send token back to client
+    res.status(201).json({ token });
   } catch (err) {
-    console.error(err.message);
+    console.error('Error registering secretary:', err.message);
     res.status(500).send('Server error');
   }
 });
 
-// @route   POST api/auth/login
-// @desc    Authenticate user & get token
+
+// @route   POST /api/secretary/login
+// @desc    Login a secretary and return JWT
 // @access  Public
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    // 1. Check if user exists
-    let user = await User.findOne({ email });
-    if (!user) {
-      // We send a generic error message for security
-      return res.status(400).json({ msg: 'Invalid Credentials' });
+    // Find secretary by email
+    const secretary = await Secretary.findOne({ email });
+    if (!secretary) {
+      return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
-    // 2. Compare the provided password with the stored hashed password
-    const isMatch = await bcrypt.compare(password, user.password);
+    // Compare password
+    const isMatch = await bcrypt.compare(password, secretary.password);
     if (!isMatch) {
-      return res.status(400).json({ msg: 'Invalid Credentials' });
+      return res.status(400).json({ msg: 'Invalid credentials' });
     }
 
-    // 3. If credentials are correct, create and return a JWT
-    const payload = {
-      user: {
-        id: user.id,
-        role: user.role,
-      },
-    };
+    // Generate JWT token
+    const payload = { id: secretary.id, role: secretary.role };
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '5h' });
 
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: '5h' },
-      (err, token) => {
-        if (err) throw err;
-        res.json({ token });
-      }
-    );
+    // Respond with token
+    res.json({ token });
   } catch (err) {
-    console.error(err.message);
+    console.error('Error logging in secretary:', err.message);
     res.status(500).send('Server error');
   }
 });

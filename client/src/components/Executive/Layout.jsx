@@ -1,4 +1,5 @@
 "use client";
+import { useNavigate } from "react-router-dom";
 
 import React, { useState, useContext, useEffect } from "react";
 import {
@@ -23,6 +24,8 @@ import Engagements from "./Engagements";
 import Reports from "./Reports";
 
 export default function ExecutiveLayout() {
+  const navigate = useNavigate();
+
   const { isDark, toggleTheme } = useContext(ThemeContext);
   const [activeView, setActiveView] = useState("Dashboard");
   const [collapsed, setCollapsed] = useState(false);
@@ -44,7 +47,14 @@ export default function ExecutiveLayout() {
     { name: "Reports", icon: BarChart2 },
   ];
 
-  const handleLogout = () => console.log("Logout clicked");
+  const handleLogout = () => 
+  {
+    console.log("Logout clicked");
+        localStorage.removeItem("token");
+        navigate("/signin");
+
+
+  }
 
   // Tailwind classes for widths/margins (no new colors/borders)
   const sidebarExpanded = "md:w-64";

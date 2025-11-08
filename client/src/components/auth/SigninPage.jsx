@@ -55,17 +55,45 @@ export default function SignIn() {
     reValidateMode: "onSubmit",
   });
 
+  // const onSubmit = async (data) => {
+  //   setSubmit(true);
+  //   try {
+  //     await signInWithEmailAndPassword(auth, data.email, data.password);
+  //     toast.success("Welcome back 🎉", { position: "top-center" });
+  //     navigate("/user");
+  //   } catch (error) {
+  //     toast.error(error.message, { position: "bottom-center" });
+  //   }
+  //   setSubmit(false);
+  // };
   const onSubmit = async (data) => {
-    setSubmit(true);
-    try {
-      await signInWithEmailAndPassword(auth, data.email, data.password);
+  setSubmit(true);
+  setBackendError("");
+
+  try {
+    const response = await fetch("http://localhost:5000/api/secretary/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      setBackendError(result.msg || "Invalid credentials");
+    } else {
+      // Save JWT token in localStorage
+      localStorage.setItem("token", result.token);
       toast.success("Welcome back 🎉", { position: "top-center" });
-      navigate("/user");
-    } catch (error) {
-      toast.error(error.message, { position: "bottom-center" });
+      navigate("/executive");
     }
-    setSubmit(false);
-  };
+  } catch (error) {
+    setBackendError("Server error. Try again later.");
+    console.error(error);
+  }
+
+  setSubmit(false);
+};
 
   const handleGoogleSignIn = async () => {
     const provider = new GoogleAuthProvider();
