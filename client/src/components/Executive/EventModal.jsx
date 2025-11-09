@@ -370,19 +370,72 @@ import toast from "react-hot-toast";
    TimePickerPopover (unchanged)
    ------------------------------------------------- */
 function TimePickerPopover({ open, anchorRef, initial = "09:00", onClose, onUse, isDark }) {
-  const [hour, setHour] = useState(Number(initial.split(":")[0] || "9"));
-  const [minute, setMinute] = useState(Number(initial.split(":")[1] || "0"));
+  // robust parser: accepts
+  // - "HH:mm" or "HH:mm:ss"
+  // - ISO datetime string ("2025-11-09T09:00:00Z")
+  // - Date object
+  // - object like { start: "09:00" } or { startTime: "2025-11-09T09:00:00Z" }
+  const parseInitial = (init) => {
+    if (!init && init !== 0) return { hour: 9, minute: 0 };
+
+    // if it's an object that may contain meeting fields
+    if (typeof init === "object" && !(init instanceof Date)) {
+      // common fields: start, startTime, time, datetime
+      const candidate = init.start ?? init.startTime ?? init.time ?? init.datetime ?? init.dateTime ?? null;
+      if (candidate) return parseInitial(candidate);
+      return { hour: 9, minute: 0 };
+    }
+
+    // Date object
+    if (init instanceof Date && !isNaN(init.getTime())) {
+      return { hour: init.getHours(), minute: init.getMinutes() };
+    }
+
+    // string cases
+    if (typeof init === "string") {
+      const s = init.trim();
+
+      // ISO / datetime detection
+      const maybeDate = Date.parse(s);
+      if (!Number.isNaN(maybeDate) && /T/.test(s)) {
+        const d = new Date(maybeDate);
+        return { hour: d.getHours(), minute: d.getMinutes() };
+      }
+
+      // time-like "HH:mm" or "HH:mm:ss"
+      const timeMatch = s.match(/(\d{1,2}):(\d{2})(?::\d{2})?$/);
+      if (timeMatch) {
+        const hh = Number(timeMatch[1]);
+        const mm = Number(timeMatch[2]);
+        if (!Number.isNaN(hh) && !Number.isNaN(mm)) {
+          return { hour: Math.max(0, Math.min(23, hh)), minute: Math.max(0, Math.min(59, mm)) };
+        }
+      }
+    }
+
+    // fallback
+    return { hour: 9, minute: 0 };
+  };
+
+  const initialParsed = parseInitial(initial);
+  const [hour, setHour] = useState(Number(initialParsed.hour || 9));
+  const [minute, setMinute] = useState(Number(initialParsed.minute || 0));
   const popRef = useRef(null);
 
+  // keep state in sync when `initial` or `open` changes
   useEffect(() => {
-    setHour(Number(initial.split(":")[0] || "9"));
-    setMinute(Number(initial.split(":")[1] || "0"));
+    const p = parseInitial(initial);
+    setHour(Number(p.hour || 9));
+    setMinute(Number(p.minute || 0));
   }, [initial, open]);
 
   useEffect(() => {
     function onDoc(e) {
       if (!open) return;
-      if (popRef.current && !popRef.current.contains(e.target) && anchorRef?.current && !anchorRef.current.contains(e.target)) {
+      // protect against null refs
+      const insidePop = popRef.current && popRef.current.contains(e.target);
+      const insideAnchor = anchorRef && anchorRef.current && anchorRef.current.contains(e.target);
+      if (!insidePop && !insideAnchor) {
         onClose && onClose();
       }
     }
@@ -398,10 +451,11 @@ function TimePickerPopover({ open, anchorRef, initial = "09:00", onClose, onUse,
     onUse && onUse(`${hh}:${mm}`);
   };
 
-  const toggleMinuteStep = (step) => setMinute((m) => {
-    const n = Math.min(59, Math.max(0, m + step));
-    return n;
-  });
+  const toggleMinuteStep = (step) =>
+    setMinute((m) => {
+      const n = Math.min(59, Math.max(0, (Number(m) || 0) + step));
+      return n;
+    });
 
   return (
     <div

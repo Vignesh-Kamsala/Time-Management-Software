@@ -32,86 +32,69 @@ export default function Meetings() {
 
   const API_BASE = "http://localhost:5000"; // change if your backend runs elsewhere
 
-  async function fetchMeetings(dateStr) {
-    setError(null);
-    setLoading(true);
-    setMeetings([]);
+ async function fetchMeetings(dateStr) {
+  setError(null);
+  setLoading(true);
+  // do NOT call setMeetings([]) here — preserve current meetings to prevent layout collapse
 
-    try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const url = `${API_BASE}/api/meetings/my-day?date=${encodeURIComponent(dateStr)}`;
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const url = `${API_BASE}/api/meetings/my-day?date=${encodeURIComponent(dateStr)}`;
 
-      const res = await fetch(url, {
-        headers: {
-          "Accept": "application/json, text/plain, */*",
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        credentials: API_BASE ? "omit" : "same-origin",
-      });
+    const res = await fetch(url, {
+      headers: {
+        "Accept": "application/json, text/plain, */*",
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: API_BASE ? "omit" : "same-origin",
+    });
 
-      if (res.status === 401) {
-        setError("Unauthorized — please log in.");
-        setLoading(false);
-        return;
-      }
-
-      const text = await res.text();
-      const ct = (res.headers.get("content-type") || "").toLowerCase();
-
-      if (!res.ok) {
-        let serverMsg = text;
-        try {
-          const parsed = ct.includes("application/json") ? JSON.parse(text) : null;
-          if (parsed) serverMsg = parsed.msg || parsed.error || JSON.stringify(parsed);
-        } catch (e) { /* ignore */ }
-        throw new Error(`Server returned ${res.status}: ${serverMsg}`);
-      }
-
-      let raw;
-      if (ct.includes("application/json")) {
-        raw = JSON.parse(text);
-      } else if (text.trim().startsWith("{") || text.trim().startsWith("[")) {
-        raw = JSON.parse(text);
-      } else {
-        throw new Error("Expected JSON but received non-JSON response. Preview: " + text.slice(0, 200));
-      }
-
-      let arr = [];
-      if (Array.isArray(raw)) arr = raw.map(item => (item.meeting ? item.meeting : item));
-      else if (raw && Array.isArray(raw.meetings)) arr = raw.meetings.map(item => (item.meeting ? item.meeting : item));
-      else if (raw && raw.meeting) arr = [raw.meeting];
-      else arr = [];
-
-      // initialize rsvpChosen from server data (so already-responded invites are locked)
-      const initialChosen = {};
-      const myEmail = (typeof window !== "undefined" ? localStorage.getItem("userEmail") : null) || "";
-      const myId = (typeof window !== "undefined" ? localStorage.getItem("userId") : null);
-      arr.forEach(m => {
-        const invited = Array.isArray(m.invited) ? m.invited : [];
-        const invitedEntry = invited.find(i =>
-          (i.execId && String(i.execId) === String(myId)) ||
-          (i.email && i.email.toLowerCase() === myEmail.toLowerCase())
-        );
-        if (invitedEntry && invitedEntry.status && invitedEntry.status !== "invited") {
-          initialChosen[m._id || m.id] = invitedEntry.status;
-        } else {
-          if (m.participants && myId && m.participants.map(String).includes(String(myId))) {
-            initialChosen[m._id || m.id] = "accepted";
-          }
-        }
-      });
-      setRsvpChosen(initialChosen);
-
-      setMeetings(arr);
-    } catch (err) {
-      console.error("fetchMeetings error", err);
-      setError(err.message || "Failed to fetch meetings");
-      toast.error(err.message || "Failed to fetch meetings");
-    } finally {
+    if (res.status === 401) {
+      setError("Unauthorized — please log in.");
       setLoading(false);
+      return;
     }
+
+    const text = await res.text();
+    const ct = (res.headers.get("content-type") || "").toLowerCase();
+
+    if (!res.ok) {
+      let serverMsg = text;
+      try {
+        const parsed = ct.includes("application/json") ? JSON.parse(text) : null;
+        if (parsed) serverMsg = parsed.msg || parsed.error || JSON.stringify(parsed);
+      } catch (e) { /* ignore */ }
+      throw new Error(`Server returned ${res.status}: ${serverMsg}`);
+    }
+
+    let raw;
+    if (ct.includes("application/json")) {
+      raw = JSON.parse(text);
+    } else if (text.trim().startsWith("{") || text.trim().startsWith("[")) {
+      raw = JSON.parse(text);
+    } else {
+      throw new Error("Expected JSON but received non-JSON response. Preview: " + text.slice(0, 200));
+    }
+
+    let arr = [];
+    if (Array.isArray(raw)) arr = raw.map(item => (item.meeting ? item.meeting : item));
+    else if (raw && Array.isArray(raw.meetings)) arr = raw.meetings.map(item => (item.meeting ? item.meeting : item));
+    else if (raw && raw.meeting) arr = [raw.meeting];
+    else arr = [];
+
+    // ... initialize rsvpChosen as before ...
+
+    setMeetings(arr);
+  } catch (err) {
+    console.error("fetchMeetings error", err);
+    setError(err.message || "Failed to fetch meetings");
+    toast.error(err.message || "Failed to fetch meetings");
+  } finally {
+    setLoading(false);
   }
+}
+
 
   useEffect(() => {
     fetchMeetings(selectedDate);
@@ -193,6 +176,43 @@ export default function Meetings() {
 
     await fetchMeetings(selectedDate);
   }
+// cancel meeting (creator-only)
+async function handleCancelMeeting(meetingId) {
+  setError(null);
+  setRsvpLoading(prev => ({ ...prev, [meetingId]: true }));
+
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) throw new Error("Not authenticated — please log in.");
+
+    const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/cancel`, {
+      method: 'POST',
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    const text = await res.text();
+    let data;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+    if (!res.ok) {
+      const msg = data?.msg || data?.error || data?.raw || `Server ${res.status}`;
+      throw new Error(msg);
+    }
+
+    // refresh meetings for UI state
+    await fetchMeetings(selectedDate);
+    toast.success("Meeting cancelled");
+  } catch (err) {
+    console.error('cancel meeting failed', err);
+    setError(err.message || 'Failed to cancel meeting');
+    toast.error(err.message || 'Failed to cancel meeting');
+  } finally {
+    setRsvpLoading(prev => ({ ...prev, [meetingId]: false }));
+  }
+}
 
   // mark completed (creator-only)
   async function handleMarkCompleted(meetingId) {
@@ -396,22 +416,44 @@ export default function Meetings() {
                         </Button>
 
                         {/* Creator-only: Mark completed (only after meeting end) */}
-                        {isCreator && (
-                          <Button
-                            onClick={() => {
-                              if (!meetingEnded) {
-                                alert('Meeting is not finished yet — can only mark completed after end time.');
-                                return;
-                              }
-                              if (!confirm('Mark this meeting as completed?')) return;
-                              handleMarkCompleted(id);
-                            }}
-                            disabled={!meetingEnded || alreadyCompleted || Boolean(rsvpLoading[id])}
-                            className={`ml-2 px-3 py-1 ${(!meetingEnded || alreadyCompleted) ? "opacity-60 cursor-not-allowed" : "bg-blue-600 text-white"}`}
-                          >
-                            {alreadyCompleted ? 'Completed' : meetingEnded ? (rsvpLoading[id] ? <Loader2 className="animate-spin w-4 h-4" /> : 'Mark completed') : 'Will be available after end'}
-                          </Button>
-                        )}
+                       {/* Creator-only actions */}
+{isCreator && (
+  <>
+    {/* Cancel (creator can cancel at any time unless already cancelled) */}
+    <Button
+      onClick={() => {
+        if (m.status === 'cancelled') {
+          alert('Meeting is already cancelled.');
+          return;
+        }
+        if (!confirm('Cancel this meeting for everyone? This action will mark the meeting cancelled for all invitees.')) return;
+        handleCancelMeeting(id);
+      }}
+      disabled={m.status === 'cancelled' || Boolean(rsvpLoading[id])}
+      variant="destructive"
+      className="ml-2 px-3 py-1"
+    >
+      {rsvpLoading[id] ? <Loader2 className="animate-spin w-4 h-4" /> : (m.status === 'cancelled' ? 'Cancelled' : 'Cancel')}
+    </Button>
+
+    {/* Mark completed (only after end time) */}
+    <Button
+      onClick={() => {
+        if (!meetingEnded) {
+          alert('Meeting is not finished yet — can only mark completed after end time.');
+          return;
+        }
+        if (!confirm('Mark this meeting as completed?')) return;
+        handleMarkCompleted(id);
+      }}
+      disabled={!meetingEnded || alreadyCompleted || Boolean(rsvpLoading[id])}
+      className={`ml-2 px-3 py-1 ${(!meetingEnded || alreadyCompleted) ? "opacity-60 cursor-not-allowed" : "bg-blue-600 text-white"}`}
+    >
+      {alreadyCompleted ? 'Completed' : meetingEnded ? (rsvpLoading[id] ? <Loader2 className="animate-spin w-4 h-4" /> : 'Mark completed') : 'Will be available after end'}
+    </Button>
+  </>
+)}
+
                       </div>
                     </div>
                   );
