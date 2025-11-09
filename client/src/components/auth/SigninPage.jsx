@@ -71,21 +71,23 @@ export default function SignIn() {
   setBackendError("");
 
   try {
-    const response = await fetch("http://localhost:5000/api/secretary/login", {
+    const response = await fetch("http://localhost:5000/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
 
     const result = await response.json();
-
+    console.log(result.user.role)
+    const role=result.user.role
     if (!response.ok) {
       setBackendError(result.msg || "Invalid credentials");
     } else {
       // Save JWT token in localStorage
       localStorage.setItem("token", result.token);
       toast.success("Welcome back 🎉", { position: "top-center" });
-      navigate("/executive");
+     if(role=="executive") navigate("/executive");
+     else navigate("/secretary")
     }
   } catch (error) {
     setBackendError("Server error. Try again later.");

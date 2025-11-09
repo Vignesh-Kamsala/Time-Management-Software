@@ -30,6 +30,13 @@ export default function ExecutiveLayout() {
   const [activeView, setActiveView] = useState("Dashboard");
   const [collapsed, setCollapsed] = useState(false);
 
+
+useEffect(() => {
+  const token = localStorage.getItem('token');
+  if (!token) {
+    navigate('/signin');
+  }
+}, []);
   // keep track of viewport >= md
   const [isDesktop, setIsDesktop] = useState(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
   useEffect(() => {

@@ -68,7 +68,7 @@ export default function SignUpForm() {
 
   try {
     // 📨 1. Send registration data to your backend API
-    const response = await fetch("http://localhost:5000/api/auth/secretary/register", {
+    const response = await fetch("http://localhost:5000/api/executive/register", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
