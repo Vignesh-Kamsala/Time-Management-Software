@@ -58,4 +58,23 @@ router.post('/login', async (req, res) => {
   }
 });
 
+
+router.get('/info', auth, async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) return res.status(401).json({ msg: 'Unauthorized' });
+
+    const user = await Executive.findById(userId)
+      .select('-password -__v') // hide sensitive fields (adjust if your schema differs)
+      .lean();
+
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+
+    return res.json({ user });
+  } catch (err) {
+    console.error('GET /api/auth/me error:', err);
+    return res.status(500).json({ msg: 'Server error', error: err.message });
+  }
+});
+
 module.exports = router;

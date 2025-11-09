@@ -79,7 +79,7 @@ export default function SignIn() {
 
     const result = await response.json();
     console.log(result.user.role)
-    const role=result.user.role
+    const role=result?.user?.role
     if (!response.ok) {
       setBackendError(result.msg || "Invalid credentials");
     } else {

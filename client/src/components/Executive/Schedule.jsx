@@ -40,24 +40,42 @@ function generateMonthGrid(currentDate) {
 }
 
 function timeToMinutes(t) {
-  const [h, m = "0"] = t.split(":");
-  return Number(h) * 60 + Number(m);
+  // tolerant parser: returns integer minutes or null if input is falsy/invalid
+  if (!t || typeof t !== "string") return null;
+  const parts = t.split(":");
+  if (!parts.length) return null;
+  const h = Number(parts[0] || 0);
+  const m = Number(parts[1] || 0);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
 }
+
 function minutesToTime(m) {
+  if (m == null || Number.isNaN(Number(m))) return "00:00";
   const hh = Math.floor(m / 60).toString().padStart(2, "0");
   const mm = (m % 60).toString().padStart(2, "0");
   return `${hh}:${mm}`;
 }
+
 function computeStyleForEvent(start, end, workStart = "09:00", workEnd = "17:00") {
-  const ws = timeToMinutes(workStart);
-  const we = timeToMinutes(workEnd);
+  // if start/end are missing, return a default small block
+  const ws = timeToMinutes(workStart) ?? 9 * 60;
+  const we = timeToMinutes(workEnd) ?? 17 * 60;
   const daySpan = Math.max(1, we - ws);
+
   const s = timeToMinutes(start);
   const e = timeToMinutes(end);
+
+  if (s == null || e == null) {
+    // fall back to top (0%) and small height so it still renders
+    return { top: `0%`, height: `3%` };
+  }
+
   const topPct = ((Math.max(s, ws) - ws) / daySpan) * 100;
   const heightPct = ((Math.max(e, s) - Math.max(s, ws)) / daySpan) * 100;
   return { top: `${topPct}%`, height: `${Math.max(1, heightPct)}%` };
 }
+
 
 /* config (unchanged) */
 const DAY_START = "08:00";
@@ -87,9 +105,8 @@ function SlotModal({ open, onClose, slot, events = [], onCreate, theme }) {
     <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div
-        className={`relative w-full max-w-md rounded-xl p-5 shadow-2xl transform transition-all ${
-          isDark ? "bg-slate-900 text-slate-100" : "bg-white text-slate-900"
-        }`}
+        className={`relative w-full max-w-md rounded-xl p-5 shadow-2xl transform transition-all ${isDark ? "bg-slate-900 text-slate-100" : "bg-white text-slate-900"
+          }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
@@ -115,9 +132,8 @@ function SlotModal({ open, onClose, slot, events = [], onCreate, theme }) {
               {events.map((ev) => (
                 <div
                   key={ev.id}
-                  className={`p-2 rounded-md border flex items-center justify-between ${
-                    isDark ? "border-slate-700" : "border-slate-200"
-                  }`}
+                  className={`p-2 rounded-md border flex items-center justify-between ${isDark ? "border-slate-700" : "border-slate-200"
+                    }`}
                 >
                   <div>
                     <div className="text-sm font-medium">{ev.title}</div>
@@ -147,7 +163,7 @@ function SlotModal({ open, onClose, slot, events = [], onCreate, theme }) {
 export default function SchedulePage() {
   const themeContext = useContext(ThemeContext) || {};
   const isDarkFromContext = Boolean(themeContext.isDark);
-  const toggleTheme = themeContext.toggleTheme || (() => {});
+  const toggleTheme = themeContext.toggleTheme || (() => { });
 
   const [localTheme, setLocalTheme] = useState(isDarkFromContext ? "dark" : "light");
   useEffect(() => { setLocalTheme(isDarkFromContext ? "dark" : "light"); }, [isDarkFromContext]);
@@ -364,7 +380,7 @@ export default function SchedulePage() {
                 {/* MONTH */}
                 {selectedView === "Month" ? (
                   <div className="grid grid-cols-7 gap-3">
-                    {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (<div key={d} className={`text-xs ${theme === "dark" ? "text-slate-300" : "text-muted-foreground"} p-2 text-center font-semibold`}>{d}</div>))}
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (<div key={d} className={`text-xs ${theme === "dark" ? "text-slate-300" : "text-muted-foreground"} p-2 text-center font-semibold`}>{d}</div>))}
                     {monthGrid.map((day, idx) => {
                       const key = format(day, "yyyy-MM-dd");
                       const inMonth = isSameMonth(day, currentDate);
@@ -383,7 +399,7 @@ export default function SchedulePage() {
                           </div>
 
                           <div className="mt-3 space-y-1">
-                            {evs.slice(0,2).map(ev => (<div key={ev.id} className="flex items-center gap-2"><span className={`inline-block w-2 h-2 rounded-full ${ev.color}`}></span><div className="text-sm truncate">{ev.title}</div></div>))}
+                            {evs.slice(0, 2).map(ev => (<div key={ev.id} className="flex items-center gap-2"><span className={`inline-block w-2 h-2 rounded-full ${ev.color}`}></span><div className="text-sm truncate">{ev.title}</div></div>))}
                             {evs.length > 2 && <div className="text-xs text-muted-foreground">+{evs.length - 2} more</div>}
                           </div>
                         </button>
@@ -428,12 +444,17 @@ export default function SchedulePage() {
                               const dayKey = format(day, 'yyyy-MM-dd');
                               const evs = eventsByDate.get(dayKey) || [];
                               const slotEvents = evs.filter((ev) => {
+                                // skip events with missing start/end
+                                if (!ev?.start || !ev?.end) return false;
                                 const s = timeToMinutes(ev.start);
                                 const e = timeToMinutes(ev.end);
-                                const slotStart = timeToMinutes(t);
+                                if (s == null || e == null) return false;
+                                const slotStart = timeToMinutes(t); // t is the slot label like "09:00" - should be valid
+                                if (slotStart == null) return false;
                                 const slotEnd = slotStart + SLOT_STEP_MIN;
                                 return !(e <= slotStart || s >= slotEnd);
                               });
+
 
                               const isSelected = selectedSlot && selectedSlot.date && format(selectedSlot.date, 'yyyy-MM-dd') === dayKey && selectedSlot.start === t;
 
@@ -443,7 +464,7 @@ export default function SchedulePage() {
                                     type="button"
                                     onClick={() => { setSelectedSlot({ date: day, start: t }); setOpenSlotModal(true); }}
                                     className={`w-full h-full rounded-lg transition-shadow flex items-center justify-between px-3 ${isSelected ? (theme === 'dark' ? "bg-indigo-900/30 ring-1 ring-indigo-400/30" : "bg-indigo-50 ring-1 ring-indigo-200") : (theme === 'dark' ? "bg-transparent hover:bg-white/6" : "bg-gray-50 hover:bg-gray-100")}`}
-                                    style={ theme === 'dark' ? { background: 'rgba(255,255,255,0.06)', height: '100%' } : { height: '100%' } }
+                                    style={theme === 'dark' ? { background: 'rgba(255,255,255,0.06)', height: '100%' } : { height: '100%' }}
                                   >
                                     <div className="text-sm truncate">{slotEvents[0] ? slotEvents[0].title : ""}</div>
                                     <div className="flex items-center gap-2">{slotEvents.length > 0 && <div className={`w-3 h-3 rounded-full ${slotEvents[0].color}`} />}</div>
@@ -525,14 +546,18 @@ export default function SchedulePage() {
         events={
           selectedSlot
             ? (eventsByDate.get(format(selectedSlot.date, "yyyy-MM-dd")) || []).filter((ev) => {
-                const s = timeToMinutes(ev.start);
-                const e = timeToMinutes(ev.end);
-                const slotStart = timeToMinutes(selectedSlot.start);
-                const slotEnd = slotStart + SLOT_STEP_MIN;
-                return !(e <= slotStart || s >= slotEnd);
-              })
+              if (!ev?.start || !ev?.end) return false;
+              const s = timeToMinutes(ev.start);
+              const e = timeToMinutes(ev.end);
+              if (s == null || e == null) return false;
+              const slotStart = timeToMinutes(selectedSlot.start);
+              if (slotStart == null) return false;
+              const slotEnd = slotStart + SLOT_STEP_MIN;
+              return !(e <= slotStart || s >= slotEnd);
+            })
             : []
         }
+
         onCreate={(date, start) => openModalForDate(date, start, 60)}
       />
 

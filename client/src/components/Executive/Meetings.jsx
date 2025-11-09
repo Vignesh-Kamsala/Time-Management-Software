@@ -1,520 +1,430 @@
-// // import { useContext } from "react";
-// // import { ThemeContext } from "@/context/ThemeContext";
-// // import { Input } from "@/components/ui/input";
-// // import { Button } from "@/components/ui/button";
-// // import { Card, CardContent, CardHeader } from "@/components/ui/card";
-// // import { ScrollArea } from "@/components/ui/scroll-area";
-
-// // export default function Meetings() {
-// //   const { isDark } = useContext(ThemeContext);
-
-// //   return (
-// //     <div className={isDark ? "bg-gray-900 text-white" : "bg-gray-100 text-black"}>
-// //       <h1 className="text-3xl font-bold mb-6">Meetings</h1>
-
-// //       <Card className="max-w-md mx-auto">
-// //         <CardHeader>Schedule a Meeting</CardHeader>
-// //         <CardContent className="flex flex-col gap-4">
-// //           <Input placeholder="Meeting Title / Purpose" />
-// //           <Input placeholder="Participants (comma separated)" />
-// //           <Input placeholder="Venue" />
-// //           <Input type="time" placeholder="Start Time" />
-// //           <Input type="number" placeholder="Duration (hours)" />
-// //           <Button>Find Common Slot & Schedule</Button>
-// //         </CardContent>
-// //       </Card>
-// //     </div>
-// //   );
-// // }
-// // Meetings.jsx
-// import React, { useState, useContext } from "react";
-// import { ThemeContext } from "@/context/ThemeContext";
-// import { Input } from "@/components/ui/input";
-// import { Button } from "@/components/ui/button";
-// import { Card, CardContent, CardHeader } from "@/components/ui/card";
-// import { ScrollArea } from "@/components/ui/scroll-area";
-// import { toast } from "react-hot-toast"; // optional, remove if you don't use it
-
-// export default function Meetings() {
-//   const { isDark } = useContext(ThemeContext);
-
-//   // form state
-//   const [title, setTitle] = useState("");
-//   const [participants, setParticipants] = useState(""); // comma separated emails or ids
-//   const [venue, setVenue] = useState("");
-//   const [startRange, setStartRange] = useState(""); // ISO or date/time string
-//   const [endRange, setEndRange] = useState("");
-//   const [durationHours, setDurationHours] = useState(1);
-//   const [loading, setLoading] = useState(false);
-//   const [result, setResult] = useState(null);
-
-//   const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-//   const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : null;
-
-//   const resetResult = () => setResult(null);
-// async function handleSchedule(e) {
-//   e.preventDefault();
-//   setResult(null);
-
-//   if (!title || !participants) {
-//     toast?.error?.("Please enter title and participants");
-//     return;
-//   }
-
-//   const parts = participants.split(",").map((p) => p.trim()).filter(Boolean);
-//   if (parts.length === 0) {
-//     toast?.error?.("Please enter at least one participant");
-//     return;
-//   }
-
-//   // default day range if user didn't set it
-//   let rangeStart = startRange;
-//   let rangeEnd = endRange;
-//   if (!rangeStart || !rangeEnd) {
-//     const d = new Date();
-//     d.setHours(9, 0, 0, 0);
-//     rangeStart = new Date(d).toISOString();
-//     d.setHours(17, 0, 0, 0);
-//     rangeEnd = new Date(d).toISOString();
-//   }
-
-//   // compute startTime so it satisfies either backend variant (insert-only needs startTime)
-//   // We'll send startTime == rangeStart (the earliest time in the search window).
-//   const startTime = new Date(rangeStart).toISOString();
-
-//   // compute durationMinutes from hours input (still send both)
-//   const durationMinutes = Math.round(Number(durationHours) * 60);
-
-//   const payload = {
-//     title,
-//     participants: parts,
-//     // include both styles so whichever backend you have will accept it:
-//     durationMinutes,
-//     rangeStart,   // used by availability route
-//     rangeEnd,     // used by availability route
-//     startTime,    // used by insert-only route
-//     // optionally you can include endTime as well:
-//     endTime: new Date(new Date(startTime).getTime() + durationMinutes * 60000).toISOString(),
-//     venue,
-//     project: ""
-//   };
-
-//   setLoading(true);
-
-//   try {
-//     const res = await fetch("http://localhost:5000/api/meetings/schedule", {
-//       method: "POST",
-//       headers: {
-//         "Content-Type": "application/json",
-//         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-//       },
-//       body: JSON.stringify(payload),
-//     });
-
-//     // read as text first to avoid JSON parse errors on empty or HTML responses
-//     const text = await res.text();
-//     let data = null;
-//     try {
-//       data = text ? JSON.parse(text) : null;
-//     } catch (parseErr) {
-//       // not JSON (maybe HTML or empty) — keep raw text in dataRaw
-//       data = { dataRaw: text };
-//     }
-
-//     if (!res.ok) {
-//       // try to show server message if available
-//       const msg = data?.msg || data?.error || data?.dataRaw || `Server returned ${res.status}`;
-//       throw new Error(msg);
-//     }
-
-//     // success
-//     setResult(data);
-//     toast?.success?.(data?.meeting ? "Meeting scheduled" : "Request succeeded");
-//   } catch (err) {
-//     console.error("Schedule error:", err);
-//     toast?.error?.(err.message || "Error scheduling meeting");
-//     setResult({ error: err.message || String(err) });
-//   } finally {
-//     setLoading(false);
-//   }
-// }
-
-
-//   return (
-//     <div className={isDark ? "bg-gray-900 text-white min-h-screen p-6" : "bg-gray-100 text-black min-h-screen p-6"}>
-//       <h1 className="text-3xl font-bold mb-6">Meetings</h1>
-
-//       <Card className="max-w-3xl mx-auto mb-6">
-//         <CardHeader>Schedule a Meeting</CardHeader>
-//         <CardContent className="flex flex-col gap-4">
-//           <Input value={title} onChange={(e) => { setTitle(e.target.value); resetResult(); }} placeholder="Meeting Title / Purpose" />
-//           <Input value={participants} onChange={(e) => { setParticipants(e.target.value); resetResult(); }} placeholder="Participants (comma separated emails or IDs)" />
-//           <Input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="Venue (e.g., Room 3A or Zoom)" />
-//           <div className="grid grid-cols-2 gap-2">
-//             <Input type="datetime-local" value={startRange} onChange={(e) => setStartRange(e.target.value)} placeholder="Range Start (optional)" />
-//             <Input type="datetime-local" value={endRange} onChange={(e) => setEndRange(e.target.value)} placeholder="Range End (optional)" />
-//           </div>
-//           <div className="flex gap-2">
-//             <Input type="number" min="0.25" step="0.25" value={durationHours} onChange={(e) => setDurationHours(e.target.value)} placeholder="Duration (hours)" />
-//             <Button onClick={handleSchedule} className="ml-auto" disabled={loading}>
-//               {loading ? "Scheduling..." : "Find Common Slot & Schedule"}
-//             </Button>
-//           </div>
-
-//           {result && (
-//             <div className="mt-4">
-//               {result.error && <div className="text-red-400">Error: {result.error}</div>}
-//               {result.meeting ? (
-//                 <div>
-//                   <h3 className="font-semibold">Meeting created</h3>
-//                   <p className="text-sm">Title: {result.meeting.title}</p>
-//                   <p className="text-sm">Start: {new Date(result.meeting.startTime).toLocaleString()}</p>
-//                   <p className="text-sm">End: {new Date(result.meeting.endTime).toLocaleString()}</p>
-//                   <p className="text-sm">Venue: {result.meeting.venue || "TBD"}</p>
-//                 </div>
-//               ) : (
-//                 <div>
-//                   <h3 className="font-semibold">No common slot found</h3>
-//                   <p className="text-sm">{result.msg || "Try expanding the range or change participants."}</p>
-//                   {result.suggestion && <pre className="text-xs bg-black/10 p-2 rounded mt-2">{JSON.stringify(result.suggestion, null, 2)}</pre>}
-//                 </div>
-//               )}
-//             </div>
-//           )}
-//         </CardContent>
-//       </Card>
-
-//       <div className="max-w-3xl mx-auto">
-//         <h2 className="text-xl font-semibold mb-3">Notes</h2>
-//         <p className="text-sm opacity-80">
-//           Participants may be provided either as executive **emails** (recommended) or as **IDs** (if you already know them).
-//           If given as emails, the backend will try to resolve emails to executives. If some emails are not found, scheduling will fail — register those executives first.
-//         </p>
-//       </div>
-//     </div>
-//   );
-// }
-import React, { useState, useContext } from "react";
+// src/app/(whatever)/Meetings.jsx
+import React, { useState, useContext, useEffect } from "react";
 import { ThemeContext } from "@/context/ThemeContext";
 import { Card, CardHeader, CardContent, CardFooter, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { format } from "date-fns";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 
 /**
- * Meetings Page — simplified (no shadcn Select)
- * Matches your MeetingSchema:
- * { title, startTime, endTime, venue, participants, project, status }
+ * Meetings (invitations-only)
+ * - no "Tentative" button
+ * - Accept is green and visible in both light/dark themes
+ * - Skeleton shown while loading
+ * - Creator can mark meeting "completed" only after endTime
  */
+
 export default function Meetings() {
   const { isDark } = useContext(ThemeContext);
 
-  const [title, setTitle] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
-  const [venue, setVenue] = useState("");
-  const [project, setProject] = useState("");
-  const [status, setStatus] = useState("scheduled");
-  const [notes, setNotes] = useState("");
-
-  const [participantInput, setParticipantInput] = useState("");
-  const [participants, setParticipants] = useState([]);
-
+  const [selectedDate, setSelectedDate] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [createdMeeting, setCreatedMeeting] = useState(null);
-  const [errors, setErrors] = useState({});
+  const [error, setError] = useState(null);
 
-  function addParticipant() {
-    const email = participantInput.trim();
-    if (!email) return;
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      toast.error("Enter a valid email");
-      return;
-    }
-    if (participants.includes(email)) return;
-    setParticipants([...participants, email]);
-    setParticipantInput("");
-  }
+  // per-meeting loading and chosen state
+  const [rsvpLoading, setRsvpLoading] = useState({}); // { [meetingId]: bool }
+  const [rsvpChosen, setRsvpChosen] = useState({});   // { [meetingId]: "accepted"|"declined" }
 
-  function removeParticipant(email) {
-    setParticipants(participants.filter((p) => p !== email));
-  }
+  const API_BASE = "http://localhost:5000"; // change if your backend runs elsewhere
 
-  function validate() {
-    const err = {};
-    if (!title.trim()) err.title = "Title is required";
-    if (!startTime) err.startTime = "Start time required";
-    if (!endTime) err.endTime = "End time required";
-    else if (new Date(endTime) <= new Date(startTime)) err.endTime = "End must be after start";
-    if (participants.length === 0) err.participants = "Add at least one participant";
-    setErrors(err);
-    return Object.keys(err).length === 0;
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-    if (!validate()) {
-      toast.error("Please fix form errors");
-      return;
-    }
-
+  async function fetchMeetings(dateStr) {
+    setError(null);
     setLoading(true);
-    setCreatedMeeting(null);
-
-    const payload = {
-      title,
-  participantEmails: participants,  // <-- send expected key
-      startTime: new Date(startTime).toISOString(),
-      endTime: new Date(endTime).toISOString(),
-      venue,
-      project,
-      status,
-    };
+    setMeetings([]);
 
     try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("http://localhost:5000/api/meetings/create-and-addtasks", {
-        method: "POST",
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      const url = `${API_BASE}/api/meetings/my-day?date=${encodeURIComponent(dateStr)}`;
+
+      const res = await fetch(url, {
         headers: {
+          "Accept": "application/json, text/plain, */*",
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify(payload),
+        credentials: API_BASE ? "omit" : "same-origin",
       });
 
-      const text = await res.text();
-      let data;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = { raw: text };
+      if (res.status === 401) {
+        setError("Unauthorized — please log in.");
+        setLoading(false);
+        return;
       }
 
-      if (!res.ok) throw new Error(data?.msg || data?.error || "Failed to schedule");
+      const text = await res.text();
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
 
-      setCreatedMeeting(data.meeting || data);
-      toast.success("Meeting scheduled successfully ✅");
+      if (!res.ok) {
+        let serverMsg = text;
+        try {
+          const parsed = ct.includes("application/json") ? JSON.parse(text) : null;
+          if (parsed) serverMsg = parsed.msg || parsed.error || JSON.stringify(parsed);
+        } catch (e) { /* ignore */ }
+        throw new Error(`Server returned ${res.status}: ${serverMsg}`);
+      }
 
-      // reset
-      setTitle("");
-      setStartTime("");
-      setEndTime("");
-      setVenue("");
-      setProject("");
-      setParticipants([]);
-      setStatus("scheduled");
-      setNotes("");
-      setErrors({});
+      let raw;
+      if (ct.includes("application/json")) {
+        raw = JSON.parse(text);
+      } else if (text.trim().startsWith("{") || text.trim().startsWith("[")) {
+        raw = JSON.parse(text);
+      } else {
+        throw new Error("Expected JSON but received non-JSON response. Preview: " + text.slice(0, 200));
+      }
+
+      let arr = [];
+      if (Array.isArray(raw)) arr = raw.map(item => (item.meeting ? item.meeting : item));
+      else if (raw && Array.isArray(raw.meetings)) arr = raw.meetings.map(item => (item.meeting ? item.meeting : item));
+      else if (raw && raw.meeting) arr = [raw.meeting];
+      else arr = [];
+
+      // initialize rsvpChosen from server data (so already-responded invites are locked)
+      const initialChosen = {};
+      const myEmail = (typeof window !== "undefined" ? localStorage.getItem("userEmail") : null) || "";
+      const myId = (typeof window !== "undefined" ? localStorage.getItem("userId") : null);
+      arr.forEach(m => {
+        const invited = Array.isArray(m.invited) ? m.invited : [];
+        const invitedEntry = invited.find(i =>
+          (i.execId && String(i.execId) === String(myId)) ||
+          (i.email && i.email.toLowerCase() === myEmail.toLowerCase())
+        );
+        if (invitedEntry && invitedEntry.status && invitedEntry.status !== "invited") {
+          initialChosen[m._id || m.id] = invitedEntry.status;
+        } else {
+          if (m.participants && myId && m.participants.map(String).includes(String(myId))) {
+            initialChosen[m._id || m.id] = "accepted";
+          }
+        }
+      });
+      setRsvpChosen(initialChosen);
+
+      setMeetings(arr);
     } catch (err) {
-      console.error("Error scheduling meeting:", err);
-      toast.error(err.message || "Server error");
+      console.error("fetchMeetings error", err);
+      setError(err.message || "Failed to fetch meetings");
+      toast.error(err.message || "Failed to fetch meetings");
     } finally {
       setLoading(false);
     }
   }
 
+  useEffect(() => {
+    fetchMeetings(selectedDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
+
+  // central RSVP handler
+  async function handleRsvp(meetingId, response, { force = false } = {}) {
+    setError(null);
+
+    if (!force && rsvpChosen[meetingId]) return;
+
+    setRsvpChosen(prev => ({ ...prev, [meetingId]: response }));
+    setRsvpLoading(prev => ({ ...prev, [meetingId]: true }));
+
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      if (!token) throw new Error("Not authenticated — please log in.");
+
+      const res = await fetch(`${API_BASE}/api/meetings/rsvp`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ meetingId, response }),
+      });
+
+      const text = await res.text();
+      let data;
+      try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+      if (!res.ok) {
+        const msg = data?.msg || data?.error || data?.raw || `Server ${res.status}`;
+        throw new Error(msg);
+      }
+
+      await fetchMeetings(selectedDate);
+    } catch (err) {
+      console.error("RSVP failed", err);
+      setRsvpChosen(prev => {
+        const copy = { ...prev };
+        delete copy[meetingId];
+        return copy;
+      });
+      setError(err.message || "Failed to send response");
+      toast.error(err.message || "Failed to send response");
+    } finally {
+      setRsvpLoading(prev => ({ ...prev, [meetingId]: false }));
+    }
+  }
+
+  // "Accept all declined" action
+  async function handleAcceptAllDeclined() {
+    const myEmail = (typeof window !== "undefined" ? localStorage.getItem("userEmail") : null) || "";
+    const myId = (typeof window !== "undefined" ? localStorage.getItem("userId") : null);
+    const declined = meetings.filter(m => {
+      const invited = Array.isArray(m.invited) ? m.invited : [];
+      const invitedEntry = invited.find(i =>
+        (i.execId && String(i.execId) === String(myId)) ||
+        (i.email && i.email.toLowerCase() === myEmail.toLowerCase())
+      );
+      const id = m._id || m.id;
+      const localChosen = rsvpChosen[id];
+      return (localChosen === "declined") || (invitedEntry && invitedEntry.status === "declined");
+    });
+
+    if (!declined.length) return;
+    if (!confirm(`Accept all ${declined.length} declined invitation(s) for ${selectedDate}?`)) return;
+
+    for (const m of declined) {
+      const id = m._id || m.id;
+      try {
+        await handleRsvp(id, "accepted", { force: true });
+      } catch (err) {
+        console.error(`Failed to accept meeting ${id}`, err);
+      }
+    }
+
+    await fetchMeetings(selectedDate);
+  }
+
+  // mark completed (creator-only)
+  async function handleMarkCompleted(meetingId) {
+    setError(null);
+    setRsvpLoading(prev => ({ ...prev, [meetingId]: true }));
+    try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      if (!token) throw new Error("Not authenticated — please log in.");
+
+      const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/complete`, {
+        method: 'POST',
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        }
+      });
+
+      const text = await res.text();
+      let data;
+      try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+
+      if (!res.ok) {
+        const msg = data?.msg || data?.error || data?.raw || `Server ${res.status}`;
+        throw new Error(msg);
+      }
+
+      await fetchMeetings(selectedDate);
+      toast.success("Meeting marked completed");
+    } catch (err) {
+      console.error('mark completed failed', err);
+      setError(err.message || 'Failed to mark meeting completed');
+      toast.error(err.message || 'Failed to mark meeting completed');
+    } finally {
+      setRsvpLoading(prev => ({ ...prev, [meetingId]: false }));
+    }
+  }
+
+  const pageBg = isDark ? "bg-slate-900 text-slate-100" : "bg-slate-100 text-slate-900";
   const cardBg = isDark ? "bg-slate-900/70 text-slate-100" : "bg-white text-slate-900";
+  const skeletonBase = isDark ? "bg-slate-700/60" : "bg-slate-200";
+
+  // compute declined count for Accept all button
+  const declinedCount = meetings.reduce((acc, m) => {
+    const myEmail = (typeof window !== "undefined" ? localStorage.getItem("userEmail") : null) || "";
+    const myId = (typeof window !== "undefined" ? localStorage.getItem("userId") : null);
+    const invited = Array.isArray(m.invited) ? m.invited : [];
+    const invitedEntry = invited.find(i => (i.execId && String(i.execId) === String(myId)) || (i.email && i.email.toLowerCase() === myEmail.toLowerCase()));
+    const id = m._id || m.id;
+    const localChosen = rsvpChosen[id];
+    if ((localChosen === "declined") || (invitedEntry && invitedEntry.status === "declined")) return acc + 1;
+    return acc;
+  }, 0);
 
   return (
-    <div className={`${isDark ? "bg-slate-900" : "bg-slate-100"} min-h-screen p-6`}>
-      <div className="max-w-4xl mx-auto">
-        <Card className={`${cardBg} shadow-xl rounded-2xl`}>
+    <div className={`${pageBg} min-h-screen p-6`}>
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Meeting Invitations</h1>
+
+          <div className="flex items-center gap-2">
+            <label className="text-sm mr-2">Date</label>
+            <Input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="max-w-[160px]"
+            />
+
+            {declinedCount > 0 && (
+              <Button onClick={handleAcceptAllDeclined} className="ml-3 px-3 py-1">
+                Accept all declined ({declinedCount})
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <Card className={`${cardBg} shadow-md`}>
           <CardHeader>
-            <CardTitle className="text-2xl font-semibold text-center">
-              Schedule a Meeting
-            </CardTitle>
+            <CardTitle className="text-lg">Invitations for {format(new Date(selectedDate), "yyyy-MM-dd")}</CardTitle>
           </CardHeader>
 
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Title */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Title *</label>
-                <Input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Purpose or project (e.g. Client Review)"
-                />
-                {errors.title && <p className="text-xs text-red-400 mt-1">{errors.title}</p>}
-              </div>
-
-              {/* Times */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Start Time *</label>
-                  <Input
-                    type="datetime-local"
-                    value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                  />
-                  {errors.startTime && <p className="text-xs text-red-400 mt-1">{errors.startTime}</p>}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">End Time *</label>
-                  <Input
-                    type="datetime-local"
-                    value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                  />
-                  {errors.endTime && <p className="text-xs text-red-400 mt-1">{errors.endTime}</p>}
-                </div>
-              </div>
-
-              {/* Venue & Project */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Venue</label>
-                  <Input
-                    value={venue}
-                    onChange={(e) => setVenue(e.target.value)}
-                    placeholder="Room 3A, Zoom, etc."
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Project</label>
-                  <Input
-                    value={project}
-                    onChange={(e) => setProject(e.target.value)}
-                    placeholder="Project name (optional)"
-                  />
-                </div>
-              </div>
-
-              {/* Participants */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Participants (emails) *
-                </label>
-                <div className="flex gap-2">
-                  <Input
-                    value={participantInput}
-                    onChange={(e) => setParticipantInput(e.target.value)}
-                    placeholder="Type email and press Add"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addParticipant();
-                      }
-                    }}
-                  />
-                  <Button type="button" onClick={addParticipant}>
-                    Add
-                  </Button>
-                </div>
-                {errors.participants && (
-                  <p className="text-xs text-red-400 mt-1">{errors.participants}</p>
-                )}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {participants.map((p) => (
-                    <div
-                      key={p}
-                      className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-200 dark:bg-slate-800"
-                    >
-                      <span className="text-sm">{p}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeParticipant(p)}
-                        className="hover:text-red-400"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
+            {loading ? (
+              <div className="space-y-3">
+                {/* 3 skeleton items */}
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className={`p-4 rounded-xl ${isDark ? "bg-slate-800 border border-slate-700" : "bg-white border border-slate-200"}`}>
+                    <div className="flex justify-between items-start">
+                      <div className="w-3/4">
+                        <Skeleton className="h-5 w-1/2 mb-3" />
+                        <Skeleton className="h-3 w-2/3 mb-2" />
+                        <Skeleton className="h-3 w-1/3" />
+                      </div>
+                      <div className="w-1/4 text-right">
+                        <Skeleton className="h-4 w-16 mx-auto" />
+                      </div>
                     </div>
-                  ))}
-                </div>
+                    <div className="mt-4 flex gap-2">
+                      <Skeleton className="h-8 w-24" />
+                      <Skeleton className="h-8 w-24" />
+                      <Skeleton className="h-8 w-24" />
+                    </div>
+                  </div>
+                ))}
               </div>
+            ) : error ? (
+              <div className="py-6 text-center text-red-400">{error}</div>
+            ) : meetings.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">No invitations for this date.</div>
+            ) : (
+              <div className="space-y-3">
+                {meetings.map((mOrWrapped) => {
+                  const m = mOrWrapped.meeting ? mOrWrapped.meeting : mOrWrapped;
+                  const id = m._id || m.id;
+                  const start = m.startTime ? new Date(m.startTime) : null;
+                  const end = m.endTime ? new Date(m.endTime) : null;
+                  const timeRange =
+                    start && end
+                      ? `${start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – ${end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      : "—";
+                  const participantsList = Array.isArray(m.participants)
+                    ? m.participants.map(p => (typeof p === "string" ? p : p.name || p.email)).join(", ")
+                    : "";
 
-              {/* Status Dropdown (plain select) */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Status</label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="w-full border rounded-md p-2 bg-background text-foreground"
-                >
-                  <option value="scheduled">Scheduled</option>
-                  <option value="tentative">Tentative</option>
-                  <option value="cancelled">Cancelled</option>
-                  <option value="rescheduled">Rescheduled</option>
-                </select>
+                  const myEmail = (typeof window !== "undefined" ? localStorage.getItem("userEmail") : null) || "";
+                  const myId = (typeof window !== "undefined" ? localStorage.getItem("userId") : null);
+                  const invitedEntry = Array.isArray(m.invited)
+                    ? m.invited.find(i => (i.execId && String(i.execId) === String(myId)) || (i.email && i.email.toLowerCase() === myEmail.toLowerCase()))
+                    : null;
+                  const currentStatus = invitedEntry?.status || (m.participants && myId && m.participants.map(String).includes(String(myId)) ? "accepted" : "invited");
+
+                  const locked = Boolean(rsvpChosen[id]);
+                  const loadingForThis = Boolean(rsvpLoading[id]);
+
+                  const isCreator = m.createdBy && (String(m.createdBy._id || m.createdBy) === String(localStorage.getItem('userId')));
+                  const meetingEnded = m.endTime ? (new Date(m.endTime).getTime() <= Date.now()) : false;
+                  const alreadyCompleted = m.status === 'completed';
+
+                  return (
+                    <div key={id} className={`p-3 rounded-lg border ${isDark ? "border-slate-700 bg-slate-800/60" : "border-slate-200 bg-white"}`}>
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-sm font-semibold truncate">{m.title}</h3>
+                            {m.project && <Badge className="ml-2">{m.project}</Badge>}
+                          </div>
+
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {timeRange} · {m.venue || "Venue: TBD"}
+                          </div>
+
+                          <div className="text-xs mt-2 text-muted-foreground">
+                            <strong>Participants:</strong> {participantsList || "None"}
+                          </div>
+
+                          {(m.notes || m.description) && (
+                            <div className="text-xs mt-2 text-muted-foreground">{m.notes || m.description}</div>
+                          )}
+
+                          {m.createdBy && (
+                            <div className="text-xs mt-2 text-muted-foreground">
+                              <strong>Created by:</strong> {m.createdBy.name || m.createdBy.email}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-xs text-muted-foreground">{new Date(m.createdAt || m.created || Date.now()).toLocaleDateString()}</div>
+                          <div className="text-xs mt-2">
+                            {m.status === "pending" && <span className="text-yellow-400">Pending</span>}
+                            {m.status === "scheduled" && <span className="text-green-400">Scheduled ✅</span>}
+                            {m.status === "cancelled" && <span className="text-red-400">Cancelled</span>}
+                            {m.status === "completed" && <span className="text-violet-400">Completed</span>}
+                            {!["pending","scheduled","cancelled","completed"].includes(m.status) && <span>{m.status}</span>}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center gap-2 flex-wrap">
+                        <div className="text-xs text-muted-foreground mr-2">
+                          Your status: <strong className="ml-1">{rsvpChosen[id] || currentStatus}</strong>
+                        </div>
+
+                        {/* Accept button: green and visible in both themes */}
+                        <Button
+                          disabled={loadingForThis || locked}
+                          onClick={() => handleRsvp(id, "accepted")}
+                          className={`px-3 py-1 rounded ${loadingForThis || locked ? "opacity-60 cursor-not-allowed" : ""} ${isDark ? "bg-emerald-500 text-white" : "bg-emerald-600 text-white shadow-sm"}`}
+                        >
+                          {loadingForThis ? <Loader2 className="animate-spin w-4 h-4" /> : "Accept"}
+                        </Button>
+
+                        {/* Decline (ghost / red) */}
+                        <Button
+                          disabled={loadingForThis || locked}
+                          onClick={() => handleRsvp(id, "declined")}
+                          variant="ghost"
+                          className={`px-3 py-1 ${loadingForThis || locked ? "opacity-60 cursor-not-allowed" : ""} ${!locked ? "text-red-600" : ""}`}
+                        >
+                          {loadingForThis ? "..." : "Decline"}
+                        </Button>
+
+                        {/* Creator-only: Mark completed (only after meeting end) */}
+                        {isCreator && (
+                          <Button
+                            onClick={() => {
+                              if (!meetingEnded) {
+                                alert('Meeting is not finished yet — can only mark completed after end time.');
+                                return;
+                              }
+                              if (!confirm('Mark this meeting as completed?')) return;
+                              handleMarkCompleted(id);
+                            }}
+                            disabled={!meetingEnded || alreadyCompleted || Boolean(rsvpLoading[id])}
+                            className={`ml-2 px-3 py-1 ${(!meetingEnded || alreadyCompleted) ? "opacity-60 cursor-not-allowed" : "bg-blue-600 text-white"}`}
+                          >
+                            {alreadyCompleted ? 'Completed' : meetingEnded ? (rsvpLoading[id] ? <Loader2 className="animate-spin w-4 h-4" /> : 'Mark completed') : 'Will be available after end'}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-
-              {/* Notes */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Notes (optional)</label>
-                <Textarea
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Add remarks or agenda (optional)"
-                />
-              </div>
-
-              {/* Buttons */}
-              <div className="flex justify-end gap-3 pt-4">
-                <Button
-                  variant="ghost"
-                  type="button"
-                  onClick={() => {
-                    setTitle("");
-                    setStartTime("");
-                    setEndTime("");
-                    setVenue("");
-                    setProject("");
-                    setParticipants([]);
-                    setParticipantInput("");
-                    setNotes("");
-                    setErrors({});
-                    setCreatedMeeting(null);
-                  }}
-                >
-                  Clear
-                </Button>
-
-                <Button type="submit" disabled={loading}>
-                  {loading ? "Scheduling..." : "Schedule Meeting"}
-                </Button>
-              </div>
-            </form>
+            )}
           </CardContent>
 
           <CardFooter>
-            {createdMeeting ? (
-              <div className="w-full rounded border p-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="font-semibold">✅ Meeting Scheduled</p>
-                    <p className="text-sm">
-                      Title: {createdMeeting.title || createdMeeting.meeting?.title}
-                    </p>
-                    <p className="text-sm">
-                      Start:{" "}
-                      {new Date(
-                        createdMeeting.startTime || createdMeeting.meeting?.startTime
-                      ).toLocaleString()}
-                    </p>
-                    <p className="text-sm">
-                      End:{" "}
-                      {new Date(
-                        createdMeeting.endTime || createdMeeting.meeting?.endTime
-                      ).toLocaleString()}
-                    </p>
-                    <p className="text-sm">
-                      Venue: {createdMeeting.venue || createdMeeting.meeting?.venue}
-                    </p>
-                  </div>
-                  <Badge>
-                    ID: {createdMeeting._id || createdMeeting.meeting?._id}
-                  </Badge>
-                </div>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                Tip: Add participant emails registered in the system.
-              </p>
-            )}
+            <div className="flex items-center justify-between w-full">
+              <div className="text-sm text-muted-foreground">Showing {meetings.length} invitation(s)</div>
+              <div className="text-xs text-muted-foreground">Auto-refreshed when you change date</div>
+            </div>
           </CardFooter>
         </Card>
       </div>

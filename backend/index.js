@@ -34,7 +34,9 @@ app.get('/', (req, res) => res.send('Server is running and operational!'));
 
 
 
+
 const authRoutes = require('./routes/auth');
+const ExecutiveSchema = require('./schema/ExecutiveSchema');
 app.use('/api/auth', authRoutes);
 
 app.listen(PORT, () => {

@@ -30,10 +30,10 @@ router.post('/login', async (req, res) => {
     if (!isMatch) return res.status(400).json({ msg: 'Invalid password' });
 
     // Create token
-    const payload = { id: user._id, role };
-    const token = jwt.sign(payload, process.env.JWT_SECRET || 'dev_secret', {
-      expiresIn: '5h',
-    });
+ // when creating token (server-side)
+const payload = { id: user._id, role: user.role };
+const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+
 
     res.json({
       msg: 'Login successful',
@@ -45,5 +45,13 @@ router.post('/login', async (req, res) => {
     res.status(500).json({ msg: 'Server error during login' });
   }
 });
+
+const auth=require("../middleware/authMiddleware")
+
+
+
+
+
+
 
 module.exports = router;
