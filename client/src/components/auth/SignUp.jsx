@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+
 import {
   Field,
   FieldError,
@@ -58,22 +59,54 @@ export default function SignUpForm() {
     return () => unsubscribe();
   }, [navigate]);
 
-  const onSubmit = async (data) => {
-    setBackendError(null);
-    setSubmit(true);
 
-    try {
-      await createUserWithEmailAndPassword(auth, data.email, data.password);
-      toast.success("Account created successfully 🎉", { position: "top-center" });
-      reset();
-      navigate("/user");
-    } catch (err) {
-      setBackendError(err.message);
-      toast.error(err.message, { position: "bottom-center" });
+
+// Example inside your Register component
+  const onSubmit = async (data) => {
+  setBackendError(null);  // Clear previous errors
+  setSubmit(true);        // Start loading spinner or disable button
+
+  try {
+    // 📨 1. Send registration data to your backend API
+    const response = await fetch("http://localhost:5000/api/auth/secretary/register", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: data.name,
+        email: data.email,
+        password: data.password,
+      }),
+    });
+
+    // 🧾 2. Convert the response to JSON
+    const result = await response.json();
+
+    // ⚠️ 3. Check if the request failed (e.g., user already exists)
+    if (!response.ok) {
+      throw new Error(result.msg || "Registration failed");
     }
 
-    setSubmit(false);
-  };
+    // 🔐 4. Save the JWT token in localStorage (optional but useful for login state)
+    localStorage.setItem("token", result.token);
+
+    // ✅ 5. Show success notification
+    toast.success("Account created successfully 🎉", { position: "top-center" });
+
+    // 🧭 6. Reset the form and navigate to user dashboard
+    reset();
+    navigate("/executive");
+  } catch (err) {
+    // ❌ 7. Handle any network or backend errors
+    const errorMessage = err.message || "Something went wrong!";
+    setBackendError(errorMessage);
+    toast.error(errorMessage, { position: "bottom-center" });
+  }
+
+  // 🔄 8. End loading state
+  setSubmit(false);
+};
 
   const handleGoogleSignIn = async () => {
     const provider = new GoogleAuthProvider();

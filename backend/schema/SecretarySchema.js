@@ -8,4 +8,4 @@ const SecretarySchema = new mongoose.Schema({
   assignedExecutives: [{ type: mongoose.Schema.Types.ObjectId, ref: "Executive" }],
 }, { timestamps: true });
 
-export default mongoose.model("Secretary", SecretarySchema);
+module.exports = mongoose.model("Secretary", SecretarySchema);

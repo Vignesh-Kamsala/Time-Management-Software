@@ -61,4 +61,25 @@ router.post('/schedule', authMiddleware, async (req, res) => {
   }
 });
 
+// @route   GET api/events
+// @desc    Get all events for the logged-in user
+// @access  Private
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    // Find all events where the current user is a participant
+    const events = await Event.find({ 'participants.user': req.user.id })
+      .populate('organizer', 'name email') // Populate organizer's name and email
+      .populate('participants.user', 'name email'); // Populate participants' names and emails
+
+    if (!events) {
+      return res.status(404).json({ msg: 'No events found for this user' });
+    }
+
+    res.json(events);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server Error');
+  }
+});
+
 module.exports = router;
