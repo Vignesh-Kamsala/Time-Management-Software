@@ -30,6 +30,7 @@ import "./App.css";
 import Dashboard from "./components/Executive/Dashboard.jsx";
 import ExecutiveLayout from "./components/Executive/Layout.jsx";
 import MyTimePickerComponent from "./components/Clock.jsx";
+import ProtectedRoute from "./ProtectedRoute.jsx";
 
 function App() {
   return (
@@ -41,30 +42,33 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/signin" element={<SignIn />} />
           <Route path="/signup" element={<SignUpForm />} />
-                        <Route path="/clock" element={<MyTimePickerComponent />} />
+          <Route path="/clock" element={<MyTimePickerComponent />} />
 
           {/* 👤 User Routes */}
           <Route path="/user" element={<UsersList />} />
           <Route path="/userList" element={<MainComponent />} />
 
           {/* 🧑 Executive Routes (nested under layout) */}
-          <Route path="/executive" element={<ExecutiveLayout />}>
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="schedule" element={<Schedule />} />
-            <Route path="meetings" element={<Meetings />} />
-            <Route path="engagements" element={<Engagements />} />
-            <Route path="reports" element={<Reports />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="/executive" element={<ExecutiveLayout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="dashboard" element={<Dashboard />} />
+              <Route path="schedule" element={<Schedule />} />
+              <Route path="meetings" element={<Meetings />} />
+              <Route path="engagements" element={<Engagements />} />
+              <Route path="reports" element={<Reports />} />
+            </Route>
           </Route>
-
           {/* 🧭 Secretary Routes (nested under layout) */}
-          <Route path="/secretary" element={<SecretaryLayout />}>
-            <Route path="dashboard" element={<SecretaryDashboard />} />
-            <Route path="schedule-meeting" element={<ScheduleMeeting />} />
-            <Route path="rearrange" element={<RearrangeAppointments />} />
-            <Route path="reports" element={<SecretaryReports />} />
-            <Route path="notifications" element={<Notifications />} />
-
-
+          <Route element={<ProtectedRoute />}>
+            <Route path="/secretary" element={<SecretaryLayout />}>
+              <Route index element={<SecretaryDashboard />} />
+              <Route path="dashboard" element={<SecretaryDashboard />} />
+              <Route path="schedule-meeting" element={<ScheduleMeeting />} />
+              <Route path="rearrange" element={<RearrangeAppointments />} />
+              <Route path="reports" element={<SecretaryReports />} />
+              <Route path="notifications" element={<Notifications />} />
+            </Route>
           </Route>
         </Routes>
       </Router>

@@ -1,99 +1,95 @@
+// backend/routes/auth.js
 const express = require('express');
 const router = express.Router();
-const User = require('../schema/userSchema');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const Executive = require('../schema/ExecutiveSchema');
+const Secretary = require('../schema/SecretarySchema');
 
-// @route   POST api/auth/register
-// @desc    Register a new user
-// @access  Public
-router.post('/register', async (req, res) => {
-  const { name, email, password, role } = req.body;
-
-  try {
-    // 1. Check if user already exists
-    let user = await User.findOne({ email });
-    if (user) {
-      return res.status(400).json({ msg: 'User already exists' });
-    }
-
-    // 2. Create a new user instance
-    user = new User({
-      name,
-      email,
-      password,
-      role,
-    });
-
-    // 3. Save the user (password will be hashed by the pre-save hook in the schema)
-    await user.save();
-
-    // 4. Create a JWT payload
-    const payload = {
-      user: {
-        id: user.id,
-        role: user.role
-      },
-    };
-
-    // 5. Sign the token
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: '5h' }, // Token expires in 5 hours
-      (err, token) => {
-        if (err) throw err;
-        res.status(201).json({ token }); // Return the token
-      }
-    );
-
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
-  }
-});
-
-// @route   POST api/auth/login
-// @desc    Authenticate user & get token
-// @access  Public
+// LOGIN route for both executive and secretary
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
+  if (!email || !password)
+    return res.status(400).json({ msg: 'Please enter both email and password' });
+
   try {
-    // 1. Check if user exists
-    let user = await User.findOne({ email });
+    // Try to find Executive first
+    let user = await Executive.findOne({ email });
+    let role = 'executive';
+
+    // If not found, try Secretary
     if (!user) {
-      // We send a generic error message for security
-      return res.status(400).json({ msg: 'Invalid Credentials' });
+      user = await Secretary.findOne({ email });
+      role = 'secretary';
     }
 
-    // 2. Compare the provided password with the stored hashed password
+    if (!user) return res.status(400).json({ msg: 'User not found' });
+
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ msg: 'Invalid Credentials' });
-    }
+    if (!isMatch) return res.status(400).json({ msg: 'Invalid password' });
 
-    // 3. If credentials are correct, create and return a JWT
-    const payload = {
-      user: {
-        id: user.id,
-        role: user.role,
-      },
-    };
+    // Create token
+ // when creating token (server-side)
+const payload = { id: user._id, role: user.role };
+const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
 
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET,
-      { expiresIn: '5h' },
-      (err, token) => {
-        if (err) throw err;
-        res.json({ token });
-      }
-    );
+
+    res.json({
+      msg: 'Login successful',
+      token,
+      user: { id: user._id, name: user.name, email: user.email, role },
+    });
   } catch (err) {
-    console.error(err.message);
-    res.status(500).send('Server error');
+    console.error('Login error:', err.message);
+    res.status(500).json({ msg: 'Server error during login' });
   }
 });
+
+const auth=require("../middleware/authMiddleware")
+
+router.post("/google-login", async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ msg: "Email is required" });
+
+  try {
+    // 1️⃣ Check Executive first
+    let user = await Executive.findOne({ email });
+    let role = "executive";
+
+    // 2️⃣ If not found, check Secretary
+    if (!user) {
+      user = await Secretary.findOne({ email });
+      role = "secretary";
+    }
+
+    // 3️⃣ If not found in either, return error
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    // 4️⃣ Create JWT token (same as normal login)
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role },
+      process.env.JWT_SECRET || "yoursecretkey",
+      { expiresIn: "7d" }
+    );
+
+    // 5️⃣ Return token + user info
+    res.json({
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role,
+      },
+    });
+  } catch (error) {
+    console.error("Google login error:", error);
+    res.status(500).json({ msg: "Server error" });
+  }
+});
+
 
 module.exports = router;

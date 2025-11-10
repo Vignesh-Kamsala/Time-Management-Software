@@ -22,14 +22,23 @@ import ScheduleMeeting from "./ScheduleMeeting";
 import RearrangeAppointments from "./RearrangeAppointments";
 import Reports from "./Reports";
 import Notifications from "./Notifications";
+import { useNavigate } from "react-router-dom";
 
 export default function SecretaryLayout() {
+    const navigate = useNavigate();
+
   const { isDark, toggleTheme } = useContext(ThemeContext);
   const [activeView, setActiveView] = useState("Dashboard");
   const [collapsed, setCollapsed] = useState(false);
 
   // keep track of viewport >= md
   const [isDesktop, setIsDesktop] = useState(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/signin');
+    }
+  }, []);
   useEffect(() => {
     const onResize = () => setIsDesktop(window.innerWidth >= 768);
     onResize();
@@ -45,7 +54,12 @@ export default function SecretaryLayout() {
     { name: "Notifications", icon: Bell },
   ];
 
-  const handleLogout = () => console.log("Logout clicked");
+  const handleLogout = () => 
+  {
+     console.log("Logout clicked");
+        localStorage.removeItem("token");
+        navigate("/signin");
+  }
 
   // Tailwind classes for widths/margins (keep consistent with ExecutiveLayout)
   const sidebarExpanded = "md:w-64";

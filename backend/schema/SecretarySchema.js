@@ -1,4 +1,5 @@
-import mongoose from "mongoose";
+// schema/SecretarySchema.js (CommonJS)
+const mongoose = require('mongoose');
 
 const SecretarySchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -8,4 +9,5 @@ const SecretarySchema = new mongoose.Schema({
   assignedExecutives: [{ type: mongoose.Schema.Types.ObjectId, ref: "Executive" }],
 }, { timestamps: true });
 
-export default mongoose.model("Secretary", SecretarySchema);
+// Guard to avoid OverwriteModelError when using nodemon/hot reload
+module.exports = mongoose.models?.Secretary || mongoose.model("Secretary", SecretarySchema);
