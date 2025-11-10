@@ -193,6 +193,38 @@ router.post('/me/tasks', auth, async (req, res) => {
   }
 });
 
+// POST /api/executive/check-availability
+router.post('/check-availability', auth, async (req, res) => {
+  try {
+    const { email, startTime, endTime } = req.body;
+    if (!email || !startTime || !endTime) {
+      return res.status(400).json({ msg: 'email, startTime, and endTime are required' });
+    }
+
+    const exec = await Executive.findOne({ email: email.toLowerCase().trim() }).select('tasks').lean();
+    if (!exec) return res.status(404).json({ msg: 'Executive not found' });
+
+    const s = new Date(startTime);
+    const e = new Date(endTime);
+    if (isNaN(s) || isNaN(e)) return res.status(400).json({ msg: 'Invalid start or end time' });
+
+    // simple overlap check: [a,b) overlaps [c,d) if a < d && c < b
+    const overlaps = (exec.tasks || []).filter((t) => {
+      const ts = new Date(t.startTime).getTime();
+      const te = new Date(t.endTime).getTime();
+      return s.getTime() < te && ts < e.getTime();
+    });
+
+    if (overlaps.length > 0) {
+      return res.json({ free: false, conflicts: overlaps });
+    }
+
+    return res.json({ free: true });
+  } catch (err) {
+    console.error('check-availability error:', err);
+    return res.status(500).json({ msg: 'Server error' });
+  }
+});
 
 
 module.exports = router;

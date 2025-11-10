@@ -771,46 +771,37 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
   };
 
   // call backend to check availability of one email for selected timeslot
-  async function checkAvailability(email) {
-    const API = "http://localhost:5000/api/executive/me/tasks"; // adapt to your actual endpoint
-    const payload = {
-      email: email.toLowerCase(),
-      startTime: buildISO(form.date, form.start),
-      endTime: buildISO(form.date, form.end),
-    };
+async function checkAvailability(email) {
+  const API = "http://localhost:5000/api/executive/check-availability";
+  const payload = {
+    email,
+    startTime: buildISO(form.date, form.start),
+    endTime: buildISO(form.date, form.end),
+  };
 
-    try {
-      setCheckingEmail(true);
-      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
-      const res = await fetch(API, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify(payload),
-      });
+  try {
+    setCheckingEmail(true);
+    const token = localStorage.getItem("token");
+    const res = await fetch(API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
 
-      const text = await res.text();
-      let data;
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        data = { raw: text };
-      }
+    const data = await res.json();
+    if (!res.ok) throw new Error("server error")
 
-      if (!res.ok) {
-        const errMsg = (data && (data.msg || data.error)) || `Server error ${res.status}`;
-        throw new Error(errMsg);
-      }
-
-      return data;
-    } catch (err) {
-      throw err;
-    } finally {
-      setCheckingEmail(false);
-    }
+    return data; // { free: true } or { free: false, conflicts: [...] }
+  } catch (err) {
+    console.error("Availability check error:", err);
+    throw err;
+  } finally {
+    setCheckingEmail(false);
   }
+}
 
   const handleAddAndCheck = async () => {
     const email = (singleGuest || "").trim().toLowerCase();
