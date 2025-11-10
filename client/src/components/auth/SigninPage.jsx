@@ -55,17 +55,7 @@ export default function SignIn() {
     reValidateMode: "onSubmit",
   });
 
-  // const onSubmit = async (data) => {
-  //   setSubmit(true);
-  //   try {
-  //     await signInWithEmailAndPassword(auth, data.email, data.password);
-  //     toast.success("Welcome back 🎉", { position: "top-center" });
-  //     navigate("/user");
-  //   } catch (error) {
-  //     toast.error(error.message, { position: "bottom-center" });
-  //   }
-  //   setSubmit(false);
-  // };
+ 
   const onSubmit = async (data) => {
   setSubmit(true);
   setBackendError("");
@@ -97,20 +87,52 @@ export default function SignIn() {
   setSubmit(false);
 };
 
-  const handleGoogleSignIn = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      const result = await signInWithPopup(auth, provider);
-      toast.success(`Welcome ${result.user.displayName}`, { position: "top-center" });
-      navigate("/user");
-    } catch (error) {
-      toast.error(error.message, { position: "bottom-center" });
+const handleGoogleSignIn = async () => {
+  const provider = new GoogleAuthProvider();
+  try {
+    // Open Google popup
+    const result = await signInWithPopup(auth, provider);
+    const email = result.user.email;
+
+    // Check user in MongoDB
+    const response = await fetch("http://localhost:5000/api/auth/google-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      toast.error(data.msg || "User not found. Please contact admin or sign up.", {
+        position: "bottom-center",
+      });
+      return;
     }
-  };
+
+    // Save token and basic info (same as normal login)
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("userEmail", data.user.email);
+    localStorage.setItem("userId", data.user._id);
+
+    toast.success(`Welcome back ${data.user.name || ""} 🎉`, {
+      position: "top-center",
+    });
+
+    // Navigate based on role
+    if (data.user.role === "executive") navigate("/executive");
+    else if (data.user.role === "secretary") navigate("/secretary");
+
+  } catch (error) {
+    console.error("Google sign-in error:", error);
+    toast.error("Google sign-in failed. Try again.", { position: "bottom-center" });
+  }
+};
+
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      if (currentUser) navigate("/user", { replace: true });
+      if (currentUser) navigate("/signin", { replace: true });
     });
     return () => unsubscribe();
   }, [navigate]);

@@ -110,7 +110,7 @@ export default function ExecutiveLayout() {
   const mainMarginCollapsed = "md:ml-20";
 
   return (
-    <div className={`flex flex-col md:flex-row min-h-screen transition-colors duration-300 ${isDark ? "bg-gray-950 text-gray-100" : "bg-gray-100 text-gray-900"}`}>
+    <div className={`flex flex-col md:flex-row min-h-screen transition-colors duration-300 ${isDark ? "bg-gray-800 text-gray-100" : "bg-gray-100 text-gray-700"}`}>
       {/* Sidebar */}
       <aside className={`hidden md:flex flex-col p-6 transition-all duration-300 ease-in-out ${collapsed ? sidebarCollapsed : sidebarExpanded} md:fixed md:top-0 md:left-0 md:h-screen overflow-auto`}>
         {/* Brand + User info */}
@@ -119,31 +119,27 @@ export default function ExecutiveLayout() {
           {!collapsed && <span className="text-sm text-gray-500 mt-1">Role: Executive</span>}
 
           {/* Show user details */}
-       {!collapsed && (
-  <div
-    className={`mt-4 w-full p-3 rounded-lg border transition-colors duration-200 ${
-      isDark
-        ? "bg-slate-800 border-slate-700 text-slate-100"
-        : "bg-gray-50 border-slate-200 text-gray-900"
-    }`}
-  >
-    {loadingUser ? (
-      <div className="text-xs text-gray-500">Loading user...</div>
-    ) : error ? (
-      <div className="text-xs text-red-500">{error}</div>
-    ) : user ? (
-      <div>
-        <div className="text-sm font-semibold">{user.name ?? "Unnamed Executive"}</div>
-        <div className="text-xs text-gray-600">{user.email}</div>
-        {user.department && (
-          <div className="text-xs text-gray-600 mt-1">Dept: {user.department}</div>
-        )}
-      </div>
-    ) : (
-      <div className="text-xs text-gray-500">No user info</div>
-    )}
-  </div>
-)}
+  {!collapsed && (
+            <div
+              className={`mt-4 w-full p-3 rounded-lg border transition-colors duration-200 ${
+                isDark ? "bg-gradient-to-r from-slate-800 to-indigo-900 border-slate-700 text-slate-50 shadow-sm" : "bg-white border-slate-200 text-gray-900"
+              }`}
+            >
+              {loadingUser ? (
+                <div className="text-xs text-gray-400">Loading user...</div>
+              ) : error ? (
+                <div className="text-xs text-red-400">{error}</div>
+              ) : user ? (
+                <div>
+                  <div className="text-sm font-semibold">{user.name ?? "Unnamed Executive"}</div>
+                  <div className="text-xs text-gray-300">{user.email}</div>
+                  {user.department && <div className="text-xs text-gray-300 mt-1">Dept: {user.department}</div>}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-400">No user info</div>
+              )}
+            </div>
+          )}
 
         </div>
 
@@ -231,6 +227,40 @@ export default function ExecutiveLayout() {
           {activeView === "Reports" && <Reports user={user} />}
         </main>
       </div>
+      {/* Mobile bottom tab navigation (appears on small screens only) */}
+      <nav
+        className={`fixed bottom-3 left-3 right-3 md:hidden rounded-2xl z-50 shadow-lg transition-all duration-200 ${
+          isDark ? "bg-gradient-to-r from-indigo-900/95 via-slate-900/95 to-rose-900/95 border border-slate-700 text-slate-100" : "bg-white/95 border border-gray-200 text-gray-900"
+        }`}
+        role="tablist"
+        aria-label="Primary Navigation"
+      >
+        <div className="flex justify-between items-center px-2">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = activeView === item.name;
+            return (
+              <button
+                key={item.name}
+                onClick={() => setActiveView(item.name)}
+                role="tab"
+                aria-selected={active}
+                title={item.name}
+                className={`flex-1 py-2 px-1 flex flex-col items-center justify-center text-xs transition-all duration-150 ${
+                  active
+                    ? "scale-[1.03] font-semibold"
+                    : "opacity-90"
+                }`}
+              >
+                <div className={`p-2 rounded-md ${active ? (isDark ? "bg-amber-500/10" : "bg-indigo-50") : ""}`}>
+                  <Icon className={`w-5 h-5 ${active ? (isDark ? "text-amber-300" : "text-indigo-600") : ""}`} />
+                </div>
+                <span className={`mt-1 ${active ? (isDark ? "text-amber-200" : "text-indigo-600") : "text-xs text-muted-foreground"}`}>{item.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
     </div>
   );
 }

@@ -113,7 +113,7 @@ export default function SignUpForm() {
     try {
       const result = await signInWithPopup(auth, provider);
       toast.success(`Welcome ${result.user.displayName}`, { position: "top-center" });
-      navigate("/user");
+      // navigate("/");
     } catch (error) {
       toast.error(error.message, { position: "bottom-center" });
     }

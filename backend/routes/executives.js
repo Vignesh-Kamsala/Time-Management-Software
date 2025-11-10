@@ -77,4 +77,122 @@ router.get('/info', auth, async (req, res) => {
   }
 });
 
+
+function buildTaskFromPayload(payload) {
+  if (!payload || typeof payload !== 'object') throw new Error('Invalid task payload');
+  const { title, startTime, endTime, description } = payload;
+  if (!title) throw new Error('Task title is required');
+  if (!startTime) throw new Error('Task startTime is required');
+
+  const s = new Date(startTime);
+  if (Number.isNaN(s.getTime())) throw new Error('Invalid startTime');
+
+  let e = null;
+  if (endTime) {
+    e = new Date(endTime);
+    if (Number.isNaN(e.getTime())) throw new Error('Invalid endTime');
+    if (e <= s) throw new Error('endTime must be after startTime');
+  } else {
+    // default duration: 30 minutes
+    e = new Date(s.getTime() + 30 * 60 * 1000);
+  }
+
+  return {
+    title: String(title),
+    startTime: s,
+    endTime: e,
+    description: description ? String(description) : '',
+  };
+}
+
+/**
+ * POST /api/executive/:id/tasks
+ * Create one or many tasks for an executive.
+ * Body: {
+ *   tasks: { title, startTime, endTime?, description? } | [ ...same... ]
+ * }
+ * If :id === "me" uses req.user.id
+ */
+router.post('/:id/tasks', auth, async (req, res) => {
+  try {
+    const targetId = req.params.id === 'me' ? req.user?.id : req.params.id;
+    if (!targetId) return res.status(400).json({ msg: 'Missing target executive id' });
+
+    const payload = req.body.tasks;
+    if (!payload) return res.status(400).json({ msg: 'Body must include "tasks" field' });
+
+    const items = Array.isArray(payload) ? payload : [payload];
+
+    const normalized = [];
+    for (const p of items) {
+      try {
+        normalized.push(buildTaskFromPayload(p));
+      } catch (err) {
+        return res.status(400).json({ msg: `Invalid task payload: ${err.message}`, payload: p });
+      }
+    }
+
+    const exec = await Executive.findById(targetId);
+    if (!exec) return res.status(404).json({ msg: 'Executive not found' });
+
+    // push tasks into exec.tasks
+    for (const t of normalized) exec.tasks.push(t);
+
+    await exec.save();
+
+    // return the appended tasks (Mongo will have assigned _id + timestamps if schema uses them)
+    const appended = exec.tasks.slice(-normalized.length);
+
+    return res.status(201).json({ msg: 'Tasks added', executiveId: exec._id, tasks: appended });
+  } catch (err) {
+    console.error('create tasks error:', err);
+    return res.status(500).json({ msg: 'Server error', error: err.message });
+  }
+});
+
+router.get('/me/tasks', auth, async (req, res) => {
+  try {
+    const exec = await Executive.findById(req.user.id).select('tasks').lean();
+    if (!exec) return res.status(404).json({ msg: 'Executive not found' });
+    return res.json({ tasks: exec.tasks || [] });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ msg: 'Server error' });
+  }
+});
+
+// POST /api/executive/me/tasks -> create tasks (single or array)
+router.post('/me/tasks', auth, async (req, res) => {
+  try {
+    const payload = req.body.tasks;
+    if (!payload) return res.status(400).json({ msg: 'Missing tasks payload' });
+    const items = Array.isArray(payload) ? payload : [payload];
+
+    function parseTask(p) {
+      if (!p.title || !p.startTime) throw new Error('title and startTime required');
+      const s = new Date(p.startTime);
+      if (isNaN(s.getTime())) throw new Error('invalid startTime');
+      const e = p.endTime ? new Date(p.endTime) : new Date(s.getTime() + 30*60000);
+      if (isNaN(e.getTime())) throw new Error('invalid endTime');
+      if (e <= s) throw new Error('endTime must be after startTime');
+      return { title: p.title, startTime: s, endTime: e, description: p.description || '', createdBy: req.user.id };
+    }
+
+    const parsed = items.map(parseTask);
+    const exec = await Executive.findById(req.user.id);
+    if (!exec) return res.status(404).json({ msg: 'Executive not found' });
+
+    for (const t of parsed) exec.tasks.push(t);
+    await exec.save();
+
+    const appended = exec.tasks.slice(-parsed.length);
+    return res.status(201).json({ msg: 'Tasks added', tasks: appended });
+  } catch (err) {
+    console.error(err);
+    return res.status(400).json({ msg: err.message });
+  }
+});
+
+
+
 module.exports = router;

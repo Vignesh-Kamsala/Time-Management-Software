@@ -5,98 +5,98 @@ const auth=require("../middleware/authMiddleware")
 const Meeting = require('../schema/EventSchema');
 const Executive = require('../schema/ExecutiveSchema');
 
-// router.post('/create-and-addtasks', async (req, res) => {
-//   try {
-//     const { title, startTime, endTime, venue, project, participantEmails, createdBy } = req.body;
-//     if (!title || !startTime || !endTime || !participantEmails || !Array.isArray(participantEmails) || participantEmails.length === 0) {
-//       return res.status(400).json({ msg: 'Missing required fields' });
-//     }
+router.post('/create-and-addtasks', async (req, res) => {
+  try {
+    const { title, startTime, endTime, venue, project, participantEmails, createdBy } = req.body;
+    if (!title || !startTime || !endTime || !participantEmails || !Array.isArray(participantEmails) || participantEmails.length === 0) {
+      return res.status(400).json({ msg: 'Missing required fields' });
+    }
 
-//     const emails = Array.from(new Set(participantEmails.map(e => (typeof e === 'string' ? e.trim().toLowerCase() : '')).filter(Boolean)));
-//     if (!emails.length) return res.status(400).json({ msg: 'No valid participant emails provided' });
+    const emails = Array.from(new Set(participantEmails.map(e => (typeof e === 'string' ? e.trim().toLowerCase() : '')).filter(Boolean)));
+    if (!emails.length) return res.status(400).json({ msg: 'No valid participant emails provided' });
 
-//     const invited = emails.map(email => ({ email, execId: null, status: 'invited' }));
-// // inside router.post('/create-and-addtasks', ...)
-// const creatorId = typeof createdBy === 'string' ? createdBy : (createdBy?._id || createdBy);
+    const invited = emails.map(email => ({ email, execId: null, status: 'invited' }));
+// inside router.post('/create-and-addtasks', ...)
+const creatorId = typeof createdBy === 'string' ? createdBy : (createdBy?._id || createdBy);
 
-// const meeting = new Meeting({
-//   title,
-//   startTime: new Date(startTime),
-//   endTime: new Date(endTime),
-//   venue: venue || '',
-//   project: project || '',
-//   createdBy: creatorId,
-//   participants: [],
-//   invited,
-//   status: 'pending',
-//   notified: false
-// });
-// // assume meeting is a Mongoose doc (not yet saved) or plain object about to be saved
-// // and `createdBy` is the ObjectId (string or ObjectId) of the creator (from req.user.id)
-
-
-// // ensure participants contains creatorId
-// meeting.participants = meeting.participants || [];
-// if (!meeting.participants.map(String).includes(String(creatorId))) {
-//   meeting.participants.push(creatorId);
-// }
-
-// // if invited array exists, mark creator's invited entry as accepted (if present)
-// if (Array.isArray(meeting.invited)) {
-//   meeting.invited = meeting.invited.map(inv => {
-//     try {
-//       const execId = inv.execId ? String(inv.execId) : null;
-//       const email = inv.email ? String(inv.email).toLowerCase() : null;
-//       // match by execId if available, else by email (fallback)
-//       if ((execId && String(execId) === String(creatorId)) || (email && email === String(req.user?.email || '').toLowerCase())) {
-//         return { ...inv, status: 'accepted' }; // mark accepted for creator
-//       }
-//       return inv;
-//     } catch (e) {
-//       return inv;
-//     }
-//   });
-// }
+const meeting = new Meeting({
+  title,
+  startTime: new Date(startTime),
+  endTime: new Date(endTime),
+  venue: venue || '',
+  project: project || '',
+  createdBy: creatorId,
+  participants: [],
+  invited,
+  status: 'pending',
+  notified: false
+});
+// assume meeting is a Mongoose doc (not yet saved) or plain object about to be saved
+// and `createdBy` is the ObjectId (string or ObjectId) of the creator (from req.user.id)
 
 
-//     await meeting.save();
+// ensure participants contains creatorId
+meeting.participants = meeting.participants || [];
+if (!meeting.participants.map(String).includes(String(creatorId))) {
+  meeting.participants.push(creatorId);
+}
 
-//     const execs = await Executive.find({ email: { $in: emails } });
-//     const execByEmail = {};
-//     for (const ex of execs) execByEmail[ex.email.toLowerCase()] = ex;
+// if invited array exists, mark creator's invited entry as accepted (if present)
+if (Array.isArray(meeting.invited)) {
+  meeting.invited = meeting.invited.map(inv => {
+    try {
+      const execId = inv.execId ? String(inv.execId) : null;
+      const email = inv.email ? String(inv.email).toLowerCase() : null;
+      // match by execId if available, else by email (fallback)
+      if ((execId && String(execId) === String(creatorId)) || (email && email === String(req.user?.email || '').toLowerCase())) {
+        return { ...inv, status: 'accepted' }; // mark accepted for creator
+      }
+      return inv;
+    } catch (e) {
+      return inv;
+    }
+  });
+}
 
-//     const taskObj = {
-//       title: meeting.title,
-//       startTime: meeting.startTime,
-//       endTime: meeting.endTime,
-//       description: `Auto-added from meeting ${meeting._id}`,
-//       meetingId: meeting._id
-//     };
 
-//     const updatedExecs = [];
-//     for (const ex of execs) {
-//       const already = Array.isArray(ex.tasks) && ex.tasks.some(t => String(t.meetingId) === String(meeting._id));
-//       if (!already) {
-//         ex.tasks.push(taskObj);
-//         await ex.save();
-//       }
-//       if (!meeting.participants.map(String).includes(String(ex._id))) meeting.participants.push(ex._id);
-//       const invIdx = meeting.invited.findIndex(i => i.email && i.email.toLowerCase() === ex.email.toLowerCase());
-//       if (invIdx !== -1) meeting.invited[invIdx].execId = ex._id;
-//       updatedExecs.push({ id: ex._id, name: ex.name, email: ex.email });
-//     }
+    await meeting.save();
 
-//     await meeting.save();
+    const execs = await Executive.find({ email: { $in: emails } });
+    const execByEmail = {};
+    for (const ex of execs) execByEmail[ex.email.toLowerCase()] = ex;
 
-//     const populated = await Meeting.findById(meeting._id).populate('participants', 'name email department tasks').populate('createdBy', 'name email').lean();
-//     const notFoundEmails = emails.filter(e => !execByEmail[e]);
+    const taskObj = {
+      title: meeting.title,
+      startTime: meeting.startTime,
+      endTime: meeting.endTime,
+      description: `Auto-added from meeting ${meeting._id}`,
+      meetingId: meeting._id
+    };
 
-//     return res.status(201).json({ meeting: populated, addedTasksTo: updatedExecs, notFoundEmails });
-//   } catch (err) {
-//     console.error('create-and-addtasks error:', err);
-//     return res.status(500).json({ msg: 'Server error', error: err.message });
-//   }
-// });
+    const updatedExecs = [];
+    for (const ex of execs) {
+      const already = Array.isArray(ex.tasks) && ex.tasks.some(t => String(t.meetingId) === String(meeting._id));
+      if (!already) {
+        ex.tasks.push(taskObj);
+        await ex.save();
+      }
+      if (!meeting.participants.map(String).includes(String(ex._id))) meeting.participants.push(ex._id);
+      const invIdx = meeting.invited.findIndex(i => i.email && i.email.toLowerCase() === ex.email.toLowerCase());
+      if (invIdx !== -1) meeting.invited[invIdx].execId = ex._id;
+      updatedExecs.push({ id: ex._id, name: ex.name, email: ex.email });
+    }
+
+    await meeting.save();
+
+    const populated = await Meeting.findById(meeting._id).populate('participants', 'name email department tasks').populate('createdBy', 'name email').lean();
+    const notFoundEmails = emails.filter(e => !execByEmail[e]);
+
+    return res.status(201).json({ meeting: populated, addedTasksTo: updatedExecs, notFoundEmails });
+  } catch (err) {
+    console.error('create-and-addtasks error:', err);
+    return res.status(500).json({ msg: 'Server error', error: err.message });
+  }
+});
 
 // at top of file make sure you have these requires:
 // const express = require('express');
@@ -104,106 +104,106 @@ const Executive = require('../schema/ExecutiveSchema');
 // const Meeting = require('../schema/EventSchema'); // adjust path as needed
 // const auth = require('../authMiddleware'); // your auth middleware
 
-router.post('/create-and-addtasks', auth, async (req, res) => {
-  try {
-    // 1) Basic data and auth
-    const userId = req.user?.id; // the creator's id (ObjectId string)
-    const userEmail = (req.user?.email || '').toLowerCase();
-    if (!userId) return res.status(401).json({ msg: 'Not authenticated' });
+// router.post('/create-and-addtasks', auth, async (req, res) => {
+//   try {
+//     // 1) Basic data and auth
+//     const userId = req.user?.id; // the creator's id (ObjectId string)
+//     const userEmail = (req.user?.email || '').toLowerCase();
+//     if (!userId) return res.status(401).json({ msg: 'Not authenticated' });
 
-    const {
-      title = 'Untitled',
-      startTime,
-      endTime,
-      venue = '',
-      project = '',
-      participantEmails = [], // expected array of emails
-      invited = [], // optional invited array objects { email, execId, status }
-    } = req.body || {};
+//     const {
+//       title = 'Untitled',
+//       startTime,
+//       endTime,
+//       venue = '',
+//       project = '',
+//       participantEmails = [], // expected array of emails
+//       invited = [], // optional invited array objects { email, execId, status }
+//     } = req.body || {};
 
-    // Validate times
-    const parsedStart = startTime ? new Date(startTime) : null;
-    const parsedEnd = endTime ? new Date(endTime) : null;
-    if (!parsedStart || isNaN(parsedStart.getTime())) return res.status(400).json({ msg: 'Invalid startTime' });
-    if (!parsedEnd || isNaN(parsedEnd.getTime())) return res.status(400).json({ msg: 'Invalid endTime' });
-    if (parsedEnd.getTime() <= parsedStart.getTime()) return res.status(400).json({ msg: 'endTime must be after startTime' });
+//     // Validate times
+//     const parsedStart = startTime ? new Date(startTime) : null;
+//     const parsedEnd = endTime ? new Date(endTime) : null;
+//     if (!parsedStart || isNaN(parsedStart.getTime())) return res.status(400).json({ msg: 'Invalid startTime' });
+//     if (!parsedEnd || isNaN(parsedEnd.getTime())) return res.status(400).json({ msg: 'Invalid endTime' });
+//     if (parsedEnd.getTime() <= parsedStart.getTime()) return res.status(400).json({ msg: 'endTime must be after startTime' });
 
-    // 2) Normalize participant emails into invited entries
-    const normalizedParticipantEmails = Array.isArray(participantEmails)
-      ? participantEmails.map(e => (e || '').toLowerCase()).filter(Boolean)
-      : [];
+//     // 2) Normalize participant emails into invited entries
+//     const normalizedParticipantEmails = Array.isArray(participantEmails)
+//       ? participantEmails.map(e => (e || '').toLowerCase()).filter(Boolean)
+//       : [];
 
-    // Build invited array while preserving any execId if present
-    const invitedFromPayload = Array.isArray(invited)
-      ? invited.map(item => ({
-          email: (item.email || '').toLowerCase() || undefined,
-          execId: item.execId || null,
-          status: item.status || 'invited',
-        }))
-      : [];
+//     // Build invited array while preserving any execId if present
+//     const invitedFromPayload = Array.isArray(invited)
+//       ? invited.map(item => ({
+//           email: (item.email || '').toLowerCase() || undefined,
+//           execId: item.execId || null,
+//           status: item.status || 'invited',
+//         }))
+//       : [];
 
-    // Merge both sources (explicit invited + participantEmails)
-    const invitedMap = new Map();
-    invitedFromPayload.forEach(i => {
-      if (i.email) invitedMap.set(i.email, { email: i.email, execId: i.execId || null, status: i.status || 'invited' });
-    });
-    normalizedParticipantEmails.forEach(email => {
-      if (!invitedMap.has(email)) invitedMap.set(email, { email, execId: null, status: 'invited' });
-    });
+//     // Merge both sources (explicit invited + participantEmails)
+//     const invitedMap = new Map();
+//     invitedFromPayload.forEach(i => {
+//       if (i.email) invitedMap.set(i.email, { email: i.email, execId: i.execId || null, status: i.status || 'invited' });
+//     });
+//     normalizedParticipantEmails.forEach(email => {
+//       if (!invitedMap.has(email)) invitedMap.set(email, { email, execId: null, status: 'invited' });
+//     });
 
-    const finalInvited = Array.from(invitedMap.values());
+//     const finalInvited = Array.from(invitedMap.values());
 
-    // 3) Prepare meeting object
-    const meetingObj = {
-      title,
-      startTime: parsedStart,
-      endTime: parsedEnd,
-      venue,
-      project,
-      invited: finalInvited,
-      participants: [], // will push creator below
-      createdBy: userId,
-      status: 'pending',
-    };
+//     // 3) Prepare meeting object
+//     const meetingObj = {
+//       title,
+//       startTime: parsedStart,
+//       endTime: parsedEnd,
+//       venue,
+//       project,
+//       invited: finalInvited,
+//       participants: [], // will push creator below
+//       createdBy: userId,
+//       status: 'pending',
+//     };
 
-    // 4) Ensure creator is accepted by default:
-    //   - add creatorId to participants
-    //   - if invited list contains creator email/execId, mark that entry as 'accepted'
-    const creatorId = userId; // declare before using (prevents hoisting errors)
-    meetingObj.participants = meetingObj.participants || [];
-    if (!meetingObj.participants.map(String).includes(String(creatorId))) {
-      meetingObj.participants.push(creatorId);
-    }
+//     // 4) Ensure creator is accepted by default:
+//     //   - add creatorId to participants
+//     //   - if invited list contains creator email/execId, mark that entry as 'accepted'
+//     const creatorId = userId; // declare before using (prevents hoisting errors)
+//     meetingObj.participants = meetingObj.participants || [];
+//     if (!meetingObj.participants.map(String).includes(String(creatorId))) {
+//       meetingObj.participants.push(creatorId);
+//     }
 
-    // Mark invited entry for creator as accepted (if it exists by execId or email)
-    const normalizedCreatorEmail = (userEmail || '').toLowerCase();
-    if (Array.isArray(meetingObj.invited)) {
-      meetingObj.invited = meetingObj.invited.map(inv => {
-        const invEmail = inv.email ? String(inv.email).toLowerCase() : null;
-        const invExecId = inv.execId ? String(inv.execId) : null;
-        if ((invExecId && String(invExecId) === String(creatorId)) || (invEmail && invEmail === normalizedCreatorEmail)) {
-          return { ...inv, status: 'accepted' };
-        }
-        return inv;
-      });
-    }
+//     // Mark invited entry for creator as accepted (if it exists by execId or email)
+//     const normalizedCreatorEmail = (userEmail || '').toLowerCase();
+//     if (Array.isArray(meetingObj.invited)) {
+//       meetingObj.invited = meetingObj.invited.map(inv => {
+//         const invEmail = inv.email ? String(inv.email).toLowerCase() : null;
+//         const invExecId = inv.execId ? String(inv.execId) : null;
+//         if ((invExecId && String(invExecId) === String(creatorId)) || (invEmail && invEmail === normalizedCreatorEmail)) {
+//           return { ...inv, status: 'accepted' };
+//         }
+//         return inv;
+//       });
+//     }
 
-    // 5) Create & save meeting
-    const meetingDoc = await Meeting.create(meetingObj);
+//     // 5) Create & save meeting
+//     const meetingDoc = await Meeting.create(meetingObj);
 
-    // 6) populate createdBy and participants for response
-    const populated = await Meeting.findById(meetingDoc._id)
-      .populate('participants', 'name email')
-      .populate('createdBy', 'name email')
-      .lean();
+//     // 6) populate createdBy and participants for response
+//     const populated = await Meeting.findById(meetingDoc._id)
+//       .populate('participants', 'name email')
+//       .populate('createdBy', 'name email')
+//       .lean();
 
-    return res.json({ meeting: populated });
-  } catch (err) {
-    console.error('create-and-addtasks error:', err);
-    // friendly error
-    return res.status(500).json({ error: err.message || 'Server error' });
-  }
-});
+//     return res.json({ meeting: populated });
+//   } catch (err) {
+//     console.error('create-and-addtasks error:', err);
+//     // friendly error
+//     return res.status(500).json({ error: err.message || 'Server error' });
+//   }
+// });
 
 
   // backend/routes/meetings.js (or events.js) - update my-day route
@@ -261,6 +261,9 @@ router.get('/my-day', auth, async (req, res) => {
 
 //cancel 
 // POST /api/meetings/:id/cancel
+// backend/routes/meetings.js (or events.js) — replace existing POST /:id/cancel handler with this
+// backend/routes/meetings.js (or events.js)
+// POST /api/meetings/:id/cancel
 router.post('/:id/cancel', auth, async (req, res) => {
   try {
     const meetingId = req.params.id;
@@ -275,34 +278,69 @@ router.post('/:id/cancel', auth, async (req, res) => {
       return res.status(403).json({ msg: 'Only the meeting creator may cancel the meeting' });
     }
 
-    // If already cancelled, return current state
+    // If already cancelled — return populated meeting
     if (meeting.status === 'cancelled') {
-      const populated = await Meeting.findById(meeting._id)
+      const populatedAgain = await Meeting.findById(meeting._id)
         .populate('participants', 'name email')
         .populate('createdBy', 'name email')
         .lean();
-      return res.json({ meeting: populated });
+      return res.json({ meeting: populatedAgain, msg: 'Already cancelled' });
     }
 
-    // Mark meeting cancelled and mark all invited entries as cancelled
+    // Mark meeting cancelled + metadata
     meeting.status = 'cancelled';
     meeting.cancelledAt = new Date();
-    meeting.cancelledBy = userId;           // optional metadata
-    meeting.cancelledByEmail = userEmail;  // optional, useful for the UI
+    meeting.cancelledBy = userId;
+    meeting.cancelledByEmail = userEmail;
 
+    // Update invited subdocs in-place so Mongoose validates & persists
     if (Array.isArray(meeting.invited)) {
-      meeting.invited = meeting.invited.map(inv => ({ ...inv.toObject?.() ?? inv, status: 'cancelled' }));
+      meeting.invited.forEach(inv => {
+        inv.status = 'cancelled';
+      });
     }
 
-    // optionally empty participants or leave them — we only update statuses so UI shows cancelled
     await meeting.save();
+
+    // OPTIONAL: update Executive.tasks entries tied to this meeting (if you store meetingId in tasks)
+    try {
+      const execIds = new Set();
+
+      if (Array.isArray(meeting.invited)) {
+        meeting.invited.forEach(inv => { if (inv.execId) execIds.add(String(inv.execId)); });
+      }
+      if (Array.isArray(meeting.participants)) {
+        meeting.participants.forEach(p => { if (p) execIds.add(String(p)); });
+      }
+
+      if (execIds.size > 0) {
+        const execArray = Array.from(execIds);
+        const execs = await Executive.find({ _id: { $in: execArray } });
+
+        for (const ex of execs) {
+          let changed = false;
+          if (Array.isArray(ex.tasks)) {
+            ex.tasks = ex.tasks.map(task => {
+              if (String(task.meetingId) === String(meeting._id)) {
+                changed = true;
+                return { ...task, status: 'cancelled', cancelledAt: new Date(), cancelledBy: userId };
+              }
+              return task;
+            });
+          }
+          if (changed) await ex.save();
+        }
+      }
+    } catch (errTasks) {
+      console.error('Error updating Executive.tasks after meeting cancel:', errTasks);
+    }
 
     const populated = await Meeting.findById(meeting._id)
       .populate('participants', 'name email')
       .populate('createdBy', 'name email')
       .lean();
 
-    return res.json({ meeting: populated });
+    return res.json({ msg: 'Meeting cancelled', meeting: populated });
   } catch (err) {
     console.error('cancel meeting error', err);
     return res.status(500).json({ error: err.message });
@@ -326,6 +364,12 @@ router.post('/rsvp', auth, async (req, res) => {
     }
 
     const meeting = await Meeting.findById(meetingId);
+    if (!meeting) return res.status(404).json({ msg: 'Meeting not found' });
+
+// BLOCK RSVPs for cancelled meetings
+if (meeting.status === 'cancelled') {
+  return res.status(400).json({ msg: 'Meeting has been cancelled by the creator; RSVPs are closed.' });
+}
     if (!meeting) return res.status(404).json({ msg: 'Meeting not found' });
 
     const exec = await Executive.findById(userId).select('email name');
