@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Badge } from "../ui/badge";
 import { toast } from "react-hot-toast";
 import { Clock } from "lucide-react";
 
@@ -201,6 +202,8 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
   const [loading, setLoading] = useState(false);
   const [checkingEmail, setCheckingEmail] = useState(false);
 
+  const [pendingConflictGuest, setPendingConflictGuest] = useState(null);
+
   const startAnchor = useRef(null);
   const endAnchor = useRef(null);
 
@@ -208,6 +211,7 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
     setForm((f) => ({ ...f, ...initialValues }));
     setAddedGuests([]);
     setSingleGuest("");
+    setPendingConflictGuest(null);
   }, [initialValues, open]);
 
   if (!open) return null;
@@ -322,8 +326,8 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
         setSingleGuest("");
         toast.success(`${email} is free for the selected time slot.`);
       } else if (busy) {
-        const conflicts = Array.isArray(data.conflicts) ? data.conflicts.map((c) => c.when || c).slice(0, 3).join(", ") : "";
-        toast.error(`${email} is busy${conflicts ? ` (${conflicts})` : ""}. Not added.`);
+        const conflicts = Array.isArray(data.conflicts) ? data.conflicts : [];
+        setPendingConflictGuest({ email, conflicts });
       } else {
         toast.error(`Could not determine availability for ${email}.`);
       }
@@ -335,6 +339,41 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
 
   const handleRemoveGuest = (email) => {
     setAddedGuests((s) => s.filter((g) => g.email !== email));
+  };
+
+  const handleConflictDecision = (decision) => {
+    if (!pendingConflictGuest) return;
+
+    if (decision === "secretary") {
+      setAddedGuests((prev) => [
+        ...prev,
+        {
+          email: pendingConflictGuest.email,
+          status: "needs-secretary",
+          conflicts: pendingConflictGuest.conflicts,
+        },
+      ]);
+      setSingleGuest("");
+      toast.success(`Secretary will coordinate ${pendingConflictGuest.email}'s schedule.`);
+    } else {
+      toast("You can pick another slot for the meeting.");
+    }
+
+    setPendingConflictGuest(null);
+  };
+
+  const formatConflict = (conflict) => {
+    if (!conflict) return "Busy";
+    if (typeof conflict === "string") return conflict;
+    const base = conflict.title || conflict.type || conflict.notes || "Busy";
+    if (conflict.startTime) {
+      try {
+        return `${base} (${new Date(conflict.startTime).toLocaleString()})`;
+      } catch (err) {
+        return base;
+      }
+    }
+    return base;
   };
 
   const handleSave = async () => {
@@ -359,6 +398,12 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
       return;
     }
 
+    const secretaryGuests = addedGuests.filter((g) => g.status === "needs-secretary");
+    const conflictSummaries = secretaryGuests.flatMap((guest) => {
+      if (!Array.isArray(guest.conflicts)) return [];
+      return guest.conflicts.slice(0, 3).map((item) => formatConflict(item));
+    });
+
     const payload = {
       title: corrected.title || "Untitled",
       startTime: corrected.date ? new Date(`${corrected.date}T${corrected.start}`).toISOString() : new Date().toISOString(),
@@ -367,13 +412,17 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
       project: "",
       participantEmails: emails,
       createdBy: typeof window !== "undefined" ? localStorage.getItem("userId") || null : null,
+      secretaryConsent: secretaryGuests.length > 0,
+      consentedParticipants: secretaryGuests.map((guest) => guest.email),
+      conflictSummaries,
     };
 
     setLoading(true);
     try {
-      const data = await createAndAddTasks(payload);
+  const data = await createAndAddTasks(payload);
 
-      const meeting = (data && (data.meeting || data)) || null;
+  const conflictDetected = Boolean(data?.conflict);
+  const meeting = (data && (data.meeting || data)) || null;
 
       if (!meeting) {
         onSave &&
@@ -402,7 +451,12 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
         end: meeting.endTime ? new Date(meeting.endTime).toTimeString().slice(0, 5) : corrected.end,
         venue: meeting.venue || corrected.venue,
         attendees: (Array.isArray(meeting.participants) ? meeting.participants.map((p) => p.email || p) : (meeting.invited || []).map((i) => i.email)).join(", "),
-        color: meeting.status === "pending" ? "bg-amber-500" : "bg-indigo-600",
+        color:
+          meeting.status === "conflict"
+            ? "bg-red-500"
+            : meeting.status === "pending"
+            ? "bg-amber-500"
+            : "bg-indigo-600",
         type: "meeting",
         raw: meeting,
       };
@@ -410,7 +464,13 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
       onSave && onSave(mappedEvent);
 
       const notFound = data.notFoundEmails && data.notFoundEmails.length ? data.notFoundEmails : [];
-      if (notFound.length) {
+      if (conflictDetected) {
+        if (secretaryGuests.length > 0) {
+          toast.success("Secretary has been notified to resolve the scheduling conflict.");
+        } else {
+          toast.error("Meeting still conflicts with executive calendars. Try a different time or involve the secretary.");
+        }
+      } else if (notFound.length) {
         toast.success(`Meeting created. ${notFound.length} email(s) not found: ${notFound.join(", ")}`);
       } else {
         toast.success("Meeting created and tasks added to executives ✅");
@@ -452,7 +512,7 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">✕</button>
         </div>
 
-        <div className="space-y-3">
+        <div className={`space-y-3 ${pendingConflictGuest ? "pointer-events-none opacity-40" : "opacity-100"}`}>
           <div>
             <Label>Title</Label>
             <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Event title" />
@@ -530,6 +590,7 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
             {addedGuests.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {addedGuests.map((g) => (
+<<<<<<< HEAD
                   <span
                     key={g.email}
                     className={`inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full border ${isDark ? "bg-gray-800 border-gray-700" : "bg-gray-100 border-gray-200"}`}
@@ -547,6 +608,34 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
                       ✕
                     </button>
                   </span>
+=======
+                  <div key={g.email} className="flex flex-col gap-2 rounded-md border p-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="text-sm font-medium">{g.email}</div>
+                        {g.status === "needs-secretary" ? (
+                          <Badge variant="secondary" className="bg-amber-100 text-amber-700">
+                            Secretary coordinating
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-emerald-600">
+                            Available
+                          </Badge>
+                        )}
+                      </div>
+                      <Button variant="ghost" size="sm" onClick={() => handleRemoveGuest(g.email)}>
+                        Remove
+                      </Button>
+                    </div>
+                    {g.status === "needs-secretary" && Array.isArray(g.conflicts) && g.conflicts.length > 0 && (
+                      <ul className="list-disc pl-5 text-xs text-muted-foreground">
+                        {g.conflicts.slice(0, 3).map((conflict, index) => (
+                          <li key={index}>{formatConflict(conflict)}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+>>>>>>> origin/Vignesh2.0
                 ))}
               </div>
             )}
@@ -563,10 +652,53 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
           </div>
         </div>
 
-        <div className="mt-5 flex justify-end gap-3">
+        <div className={`mt-5 flex justify-end gap-3 ${pendingConflictGuest ? "pointer-events-none" : ""}`}>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave} disabled={loading || addedGuests.length === 0}>{loading ? "Saving..." : "Save"}</Button>
         </div>
+        {pendingConflictGuest && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center px-4">
+            <div className="absolute inset-0 rounded-2xl bg-black/70 backdrop-blur-sm" />
+            <div className={`relative w-full max-w-md rounded-xl border p-6 shadow-xl ${isDark ? "bg-slate-900 border-slate-700 text-gray-100" : "bg-white border-slate-200 text-gray-900"}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold">Executive is busy</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {pendingConflictGuest?.email} already has commitments during this time. Would you like the secretary to coordinate a resolution, or try a different slot?
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingConflictGuest(null)}
+                  className="rounded-md p-1 text-sm text-muted-foreground hover:bg-muted"
+                  aria-label="Dismiss conflict information"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {Array.isArray(pendingConflictGuest?.conflicts) && pendingConflictGuest.conflicts.length > 0 && (
+                <div className={`mt-4 rounded-md border p-3 text-sm ${isDark ? "border-slate-700 bg-slate-900/60" : "border-slate-200 bg-slate-50"}`}>
+                  <div className="font-medium text-foreground">Current conflicts</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+                    {pendingConflictGuest.conflicts.slice(0, 3).map((conflict, index) => (
+                      <li key={index}>{formatConflict(conflict)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                <Button variant="ghost" onClick={() => handleConflictDecision("reschedule")}>
+                  I&apos;ll pick another time
+                </Button>
+                <Button onClick={() => handleConflictDecision("secretary")}>
+                  Ask secretary to coordinate
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

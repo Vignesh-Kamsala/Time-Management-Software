@@ -1,97 +1,320 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const auth=require("../middleware/authMiddleware")
+const auth = require('../middleware/authMiddleware');
 const Meeting = require('../schema/EventSchema');
 const Executive = require('../schema/ExecutiveSchema');
+const Conflict = require('../schema/ConflictSchema');
+const { notifySecretariesForExecutives } = require('../services/notificationService');
 
-router.post('/create-and-addtasks', async (req, res) => {
+function intervalsOverlap(startA, endA, startB, endB) {
+  return startA < endB && startB < endA;
+}
+
+async function buildConflictReport({ execs, start, end }) {
+  if (!execs.length) return [];
+
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+
+  const execIds = execs.map((ex) => ex._id);
+  const execEmails = execs
+    .map((ex) => (ex.email ? ex.email.toLowerCase() : null))
+    .filter(Boolean);
+
+  const meetingConflicts = await Meeting.find({
+    status: { $in: ['pending', 'scheduled', 'conflict'] },
+    startTime: { $lt: end },
+    endTime: { $gt: start },
+    $or: [
+      { participants: { $in: execIds } },
+      { 'invited.execId': { $in: execIds } },
+      { 'invited.email': { $in: execEmails } },
+    ],
+  })
+    .select('title startTime endTime status participants invited project')
+    .lean();
+
+  return execs.reduce((acc, execDoc) => {
+    const execIdStr = String(execDoc._id);
+    const execEmail = execDoc.email?.toLowerCase() || null;
+
+    const taskConflicts = (execDoc.tasks || []).filter((task) => {
+      const taskStart = new Date(task.startTime).getTime();
+      const taskEnd = new Date(task.endTime || task.startTime).getTime();
+      return intervalsOverlap(startMs, endMs, taskStart, taskEnd);
+    });
+
+    const meetingHits = meetingConflicts.filter((meeting) => {
+      const participates = Array.isArray(meeting.participants)
+        ? meeting.participants.map((id) => String(id)).includes(execIdStr)
+        : false;
+
+      const invitedMatch = Array.isArray(meeting.invited)
+        ? meeting.invited.some((entry) => {
+            const entryExec = entry.execId ? String(entry.execId) === execIdStr : false;
+            const entryEmail = entry.email ? entry.email.toLowerCase() === execEmail : false;
+            return entryExec || entryEmail;
+          })
+        : false;
+
+      return participates || invitedMatch;
+    });
+
+    if (!taskConflicts.length && !meetingHits.length) return acc;
+
+    acc.push({
+      executive: execDoc._id,
+      executiveEmail: execDoc.email,
+      conflicts: [
+        ...taskConflicts.map((task) => ({
+          type: 'task',
+          refId: task._id,
+          title: task.title,
+          startTime: task.startTime,
+          endTime: task.endTime,
+          notes: task.description,
+          status: task.status || 'scheduled',
+        })),
+        ...meetingHits.map((meeting) => ({
+          type: 'meeting',
+          refId: meeting._id,
+          title: meeting.title,
+          startTime: meeting.startTime,
+          endTime: meeting.endTime,
+          status: meeting.status,
+          notes: meeting.project,
+        })),
+      ],
+    });
+
+    return acc;
+  }, []);
+}
+
+router.post('/create-and-addtasks', auth, async (req, res) => {
   try {
-    const { title, startTime, endTime, venue, project, participantEmails, createdBy } = req.body;
-    if (!title || !startTime || !endTime || !participantEmails || !Array.isArray(participantEmails) || participantEmails.length === 0) {
+    const {
+      title,
+      startTime,
+      endTime,
+      venue,
+      project,
+      participantEmails = [],
+      invited: invitedFromPayload = [],
+      createdBy,
+    } = req.body || {};
+
+    if (!title || !startTime || !endTime || !Array.isArray(participantEmails) || participantEmails.length === 0) {
       return res.status(400).json({ msg: 'Missing required fields' });
     }
 
-    const emails = Array.from(new Set(participantEmails.map(e => (typeof e === 'string' ? e.trim().toLowerCase() : '')).filter(Boolean)));
-    if (!emails.length) return res.status(400).json({ msg: 'No valid participant emails provided' });
-
-    const invited = emails.map(email => ({ email, execId: null, status: 'invited' }));
-// inside router.post('/create-and-addtasks', ...)
-const creatorId = typeof createdBy === 'string' ? createdBy : (createdBy?._id || createdBy);
-
-const meeting = new Meeting({
-  title,
-  startTime: new Date(startTime),
-  endTime: new Date(endTime),
-  venue: venue || '',
-  project: project || '',
-  createdBy: creatorId,
-  participants: [],
-  invited,
-  status: 'pending',
-  notified: false
-});
-// assume meeting is a Mongoose doc (not yet saved) or plain object about to be saved
-// and `createdBy` is the ObjectId (string or ObjectId) of the creator (from req.user.id)
-
-
-// ensure participants contains creatorId
-meeting.participants = meeting.participants || [];
-if (!meeting.participants.map(String).includes(String(creatorId))) {
-  meeting.participants.push(creatorId);
-}
-
-// if invited array exists, mark creator's invited entry as accepted (if present)
-if (Array.isArray(meeting.invited)) {
-  meeting.invited = meeting.invited.map(inv => {
-    try {
-      const execId = inv.execId ? String(inv.execId) : null;
-      const email = inv.email ? String(inv.email).toLowerCase() : null;
-      // match by execId if available, else by email (fallback)
-      if ((execId && String(execId) === String(creatorId)) || (email && email === String(req.user?.email || '').toLowerCase())) {
-        return { ...inv, status: 'accepted' }; // mark accepted for creator
-      }
-      return inv;
-    } catch (e) {
-      return inv;
+  const creatorId = req.user?.id || (typeof createdBy === 'string' ? createdBy : createdBy?._id);
+  const creatorEmail = req.user?.email ? req.user.email.toLowerCase() : null;
+    if (!creatorId) {
+      return res.status(401).json({ msg: 'Unable to determine meeting creator' });
     }
-  });
-}
 
+    const parsedStart = new Date(startTime);
+    const parsedEnd = new Date(endTime);
+    if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) {
+      return res.status(400).json({ msg: 'Invalid startTime or endTime' });
+    }
+    if (parsedEnd.getTime() <= parsedStart.getTime()) {
+      return res.status(400).json({ msg: 'endTime must be after startTime' });
+    }
 
-    await meeting.save();
+    const normalizedEmails = Array.from(
+      new Set(
+        participantEmails
+          .map((email) => (typeof email === 'string' ? email.trim().toLowerCase() : ''))
+          .filter(Boolean)
+      )
+    );
 
-    const execs = await Executive.find({ email: { $in: emails } });
-    const execByEmail = {};
-    for (const ex of execs) execByEmail[ex.email.toLowerCase()] = ex;
+    if (!normalizedEmails.length) {
+      return res.status(400).json({ msg: 'No valid participant emails provided' });
+    }
 
-    const taskObj = {
-      title: meeting.title,
-      startTime: meeting.startTime,
-      endTime: meeting.endTime,
-      description: `Auto-added from meeting ${meeting._id}`,
-      meetingId: meeting._id
+    const invitedMap = new Map();
+    if (Array.isArray(invitedFromPayload)) {
+      invitedFromPayload.forEach((entry) => {
+        const email = typeof entry?.email === 'string' ? entry.email.trim().toLowerCase() : null;
+        if (!email) return;
+        invitedMap.set(email, {
+          email,
+          execId: entry.execId || null,
+          status: entry.status || 'invited',
+        });
+      });
+    }
+
+    normalizedEmails.forEach((email) => {
+      if (!invitedMap.has(email)) {
+        invitedMap.set(email, { email, execId: null, status: 'invited' });
+      }
+    });
+
+    const invited = Array.from(invitedMap.values());
+
+    const meetingPayload = {
+      title,
+      startTime: parsedStart,
+      endTime: parsedEnd,
+      venue: venue || '',
+      project: project || '',
+      createdBy: creatorId,
+      participants: [],
+      invited,
+      status: 'pending',
+      hasConflict: false,
     };
 
-    const updatedExecs = [];
-    for (const ex of execs) {
-      const already = Array.isArray(ex.tasks) && ex.tasks.some(t => String(t.meetingId) === String(meeting._id));
-      if (!already) {
-        ex.tasks.push(taskObj);
-        await ex.save();
+    // Ensure creator is part of the meeting and marked accepted if present in invited list
+    meetingPayload.participants.push(creatorId);
+    meetingPayload.invited = meetingPayload.invited.map((entry) => {
+      if (!entry) return entry;
+      const matchByExec = entry.execId && String(entry.execId) === String(creatorId);
+      const matchByEmail = entry.email && creatorEmail && entry.email === creatorEmail;
+      if (matchByExec || matchByEmail) {
+        return { ...entry, execId: entry.execId || creatorId, status: 'accepted' };
       }
-      if (!meeting.participants.map(String).includes(String(ex._id))) meeting.participants.push(ex._id);
-      const invIdx = meeting.invited.findIndex(i => i.email && i.email.toLowerCase() === ex.email.toLowerCase());
-      if (invIdx !== -1) meeting.invited[invIdx].execId = ex._id;
-      updatedExecs.push({ id: ex._id, name: ex.name, email: ex.email });
+      return entry;
+    });
+
+    const execs = await Executive.find({ email: { $in: normalizedEmails } });
+
+    if (meetingPayload.invited?.length) {
+      const emailToId = new Map(execs.map((ex) => [ex.email.toLowerCase(), ex._id]));
+      meetingPayload.invited = meetingPayload.invited.map((entry) => {
+        if (!entry) return entry;
+        if (!entry.execId && entry.email && emailToId.has(entry.email)) {
+          return { ...entry, execId: emailToId.get(entry.email) };
+        }
+        return entry;
+      });
     }
 
-    await meeting.save();
+    const conflictReport = await buildConflictReport({ execs, start: parsedStart, end: parsedEnd });
 
-    const populated = await Meeting.findById(meeting._id).populate('participants', 'name email department tasks').populate('createdBy', 'name email').lean();
-    const notFoundEmails = emails.filter(e => !execByEmail[e]);
+    // Conflict path: persist meeting + conflict ticket, skip task creation
+    if (conflictReport.length) {
+      const meetingDoc = await Meeting.create({
+        ...meetingPayload,
+        status: 'conflict',
+        hasConflict: true,
+        conflictStatus: 'open',
+        conflictNotes: 'Conflict requires secretary intervention',
+      });
 
-    return res.status(201).json({ meeting: populated, addedTasksTo: updatedExecs, notFoundEmails });
+      const conflictDoc = await Conflict.create({
+        meeting: meetingDoc._id,
+        requestedBy: creatorId,
+        participantEmails: normalizedEmails,
+        participantIds: execs.map((ex) => ex._id),
+        overlaps: conflictReport,
+        history: [
+          {
+            action: 'conflict_detected',
+            notes: 'Scheduling conflict detected during meeting creation',
+            actor: creatorId,
+            actorRole: 'executive',
+          },
+        ],
+      });
+
+      const executiveIdsForNotification = new Set(execs.map((ex) => String(ex._id)));
+      executiveIdsForNotification.add(String(creatorId));
+
+      const participantNames = execs
+        .map((ex) => ex.name || ex.email)
+        .filter(Boolean)
+        .join(', ');
+
+      await notifySecretariesForExecutives({
+        executiveIds: Array.from(executiveIdsForNotification),
+        title: `Conflict detected: ${meetingPayload.title}`,
+        message: `No common slot was available for ${meetingPayload.title}${participantNames ? ` (${participantNames})` : ''}. Please review and coordinate a new time.`,
+        channel: 'conflict',
+        severity: 'warning',
+        meetingId: meetingDoc._id,
+        conflictId: conflictDoc._id,
+        metadata: {
+          meetingTitle: meetingPayload.title,
+          startTime: parsedStart,
+          endTime: parsedEnd,
+          participantEmails: normalizedEmails,
+        },
+        emailSubject: `Action required: meeting conflict for ${meetingPayload.title}`,
+        emailText: `The meeting "${meetingPayload.title}" could not be scheduled automatically.\nParticipants: ${participantNames || normalizedEmails.join(', ')}.\nPlease review the conflict queue to coordinate a new slot.`,
+      }).catch((err) => console.error('notifySecretariesForExecutives error:', err));
+
+      const populatedMeeting = await Meeting.findById(meetingDoc._id)
+        .populate('participants', 'name email department')
+        .populate('createdBy', 'name email')
+        .lean();
+
+      return res.status(202).json({
+        msg: 'Scheduling conflict detected. Secretary has been notified.',
+        meeting: populatedMeeting,
+        conflict: conflictDoc,
+      });
+    }
+
+    // No conflicts: finalize meeting and tasks
+    const meetingDoc = await Meeting.create(meetingPayload);
+
+    const execByEmail = {};
+    execs.forEach((ex) => {
+      execByEmail[ex.email.toLowerCase()] = ex;
+    });
+
+    const updatedExecs = [];
+    for (const execDoc of execs) {
+      const hasTask = Array.isArray(execDoc.tasks)
+        ? execDoc.tasks.some((task) => String(task.meetingId) === String(meetingDoc._id))
+        : false;
+
+      if (!hasTask) {
+        execDoc.tasks.push({
+          title: meetingDoc.title,
+          startTime: meetingDoc.startTime,
+          endTime: meetingDoc.endTime,
+          description: `Auto-added from meeting ${meetingDoc._id}`,
+          meetingId: meetingDoc._id,
+        });
+      }
+
+      await execDoc.save();
+
+      if (!meetingDoc.participants.map(String).includes(String(execDoc._id))) {
+        meetingDoc.participants.push(execDoc._id);
+      }
+
+      const invitedIndex = meetingDoc.invited.findIndex(
+        (entry) => entry?.email && entry.email.toLowerCase() === execDoc.email.toLowerCase()
+      );
+      if (invitedIndex !== -1) {
+        meetingDoc.invited[invitedIndex].execId = execDoc._id;
+      }
+
+      updatedExecs.push({ id: execDoc._id, name: execDoc.name, email: execDoc.email });
+    }
+
+    await meetingDoc.save();
+
+    const populatedMeeting = await Meeting.findById(meetingDoc._id)
+      .populate('participants', 'name email department tasks')
+      .populate('createdBy', 'name email')
+      .lean();
+
+    const notFoundEmails = normalizedEmails.filter((email) => !execByEmail[email]);
+
+    return res.status(201).json({
+      meeting: populatedMeeting,
+      addedTasksTo: updatedExecs,
+      notFoundEmails,
+    });
   } catch (err) {
     console.error('create-and-addtasks error:', err);
     return res.status(500).json({ msg: 'Server error', error: err.message });
