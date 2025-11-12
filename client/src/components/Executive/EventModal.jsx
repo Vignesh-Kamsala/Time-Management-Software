@@ -590,25 +590,6 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
             {addedGuests.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-2">
                 {addedGuests.map((g) => (
-<<<<<<< HEAD
-                  <span
-                    key={g.email}
-                    className={`inline-flex items-center gap-2 text-xs px-2 py-1 rounded-full border ${isDark ? "bg-gray-800 border-gray-700" : "bg-gray-100 border-gray-200"}`}
-                    title={g.email}
-                  >
-                    <span className="max-w-[12rem] truncate">{g.email}</span>
-                    <span className={`text-[10px] font-medium ${g.status === "free" ? "text-green-600" : "text-rose-500"}`}>
-                      {g.status === "free" ? "Free" : "Busy"}
-                    </span>
-                    <button
-                      onClick={() => handleRemoveGuest(g.email)}
-                      className="ml-1 text-[11px] px-1 py-[2px] rounded-full hover:bg-gray-200 dark:hover:bg-gray-700"
-                      aria-label={`Remove ${g.email}`}
-                    >
-                      ✕
-                    </button>
-                  </span>
-=======
                   <div key={g.email} className="flex flex-col gap-2 rounded-md border p-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-3">
@@ -635,7 +616,6 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
                       </ul>
                     )}
                   </div>
->>>>>>> origin/Vignesh2.0
                 ))}
               </div>
             )}
