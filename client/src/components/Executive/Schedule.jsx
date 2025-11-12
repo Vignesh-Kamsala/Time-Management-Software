@@ -1,4 +1,3 @@
-
 // "use client";
 
 // import React, { useContext, useMemo, useState, useEffect } from "react";
@@ -29,6 +28,7 @@
 // function generateMonthGrid(currentDate) {
 //   const monthStart = startOfMonth(currentDate);
 //   const start = new Date(monthStart);
+//   // start from the previous Sunday so the grid always starts Sun..Sat (42 cells = 6 rows)
 //   start.setDate(start.getDate() - start.getDay());
 //   const days = [];
 //   for (let i = 0; i < 42; i++) {
@@ -40,7 +40,6 @@
 // }
 
 // function timeToMinutes(t) {
-//   // tolerant parser: returns integer minutes or null if input is falsy/invalid
 //   if (!t || typeof t !== "string") return null;
 //   const parts = t.split(":");
 //   if (!parts.length) return null;
@@ -58,7 +57,6 @@
 // }
 
 // function computeStyleForEvent(start, end, workStart = "09:00", workEnd = "17:00") {
-//   // if start/end are missing, return a default small block
 //   const ws = timeToMinutes(workStart) ?? 9 * 60;
 //   const we = timeToMinutes(workEnd) ?? 17 * 60;
 //   const daySpan = Math.max(1, we - ws);
@@ -67,7 +65,6 @@
 //   const e = timeToMinutes(end);
 
 //   if (s == null || e == null) {
-//     // fall back to top (0%) and small height so it still renders
 //     return { top: `0%`, height: `3%` };
 //   }
 
@@ -75,7 +72,6 @@
 //   const heightPct = ((Math.max(e, s) - Math.max(s, ws)) / daySpan) * 100;
 //   return { top: `${topPct}%`, height: `${Math.max(1, heightPct)}%` };
 // }
-
 
 // /* config (unchanged) */
 // const DAY_START = "08:00";
@@ -159,7 +155,7 @@
 //   );
 // }
 
-// /* SchedulePage with sticky header+toolbar and scrollable calendar body (no scrollbar visible) */
+// /* SchedulePage */
 // export default function SchedulePage() {
 //   const themeContext = useContext(ThemeContext) || {};
 //   const isDarkFromContext = Boolean(themeContext.isDark);
@@ -172,30 +168,75 @@
 
 //   const [currentDate, setCurrentDate] = useState(new Date());
 //   const [selectedView, setSelectedView] = useState("Month");
-//   const [monthGrid] = useState(() => generateMonthGrid(new Date()));
 
-//   const [events, setEvents] = useState([
-//     {
-//       id: 1,
-//       title: "Project Sync",
-//       date: format(new Date(), "yyyy-MM-dd"),
-//       start: "09:30",
-//       end: "10:30",
-//       venue: "Room 3A",
-//       attendees: "Asha, Rohan",
-//       color: "bg-indigo-600",
-//     },
-//     {
-//       id: 2,
-//       title: "Client Call",
-//       date: format(new Date(), "yyyy-MM-dd"),
-//       start: "11:00",
-//       end: "12:00",
-//       venue: "Zoom",
-//       attendees: "Client",
+//   /* FIX: compute monthGrid from currentDate so it updates when currentDate changes */
+//   const monthGrid = useMemo(() => generateMonthGrid(currentDate), [currentDate]);
+
+//   const [events, setEvents] = useState([]);
+//   const [loadingEvents, setLoadingEvents] = useState(true);
+//   const API_BASE = "http://localhost:5000";
+
+//   function mapTaskToEvent(task) {
+//     const start = task.startTime ? new Date(task.startTime) : null;
+//     const end = task.endTime ? new Date(task.endTime) : null;
+
+//     const date = start ? start.toISOString().slice(0, 10) : (task.date || new Date().toISOString().slice(0, 10));
+//     const startStr = start ? start.toTimeString().slice(0, 5) : (task.start || "09:00");
+//     const endStr = end ? end.toTimeString().slice(0, 5) : (task.end || minutesToTime((timeToMinutes(startStr) || 9*60) + 30));
+
+//     return {
+//       id: task._id || task.id || `${date}-${startStr}-${task.title}` ,
+//       title: task.title || task.description || "Task",
+//       date,
+//       start: startStr,
+//       end: endStr,
+//       venue: task.venue || "",
+//       attendees: task.assignees || "",
+//       notes: task.description || "",
 //       color: "bg-emerald-500",
-//     },
-//   ]);
+//       type: "task",
+//       raw: task,
+//     };
+//   }
+
+//   async function fetchUserTasks() {
+//     setLoadingEvents(true);
+//     try {
+//       const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+//       const res = await fetch(`${API_BASE}/api/executive/info`, {
+//         method: "GET",
+//         headers: {
+//           "Content-Type": "application/json",
+//           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+//         },
+//       });
+
+//       if (res.status === 401) {
+//         setEvents([]);
+//         setLoadingEvents(false);
+//         return;
+//       }
+
+//       const body = await res.json();
+//       // executives route sometimes returns { user } - support both shapes
+//       const user = body?.user ?? body;
+//       const tasks = Array.isArray(user?.tasks) ? user.tasks : [];
+
+//       const mapped = tasks.map(mapTaskToEvent);
+//       setEvents(mapped);
+//     } catch (err) {
+//       console.error("Failed to load tasks for calendar", err);
+//       setEvents([]);
+//     } finally {
+//       setLoadingEvents(false);
+//     }
+//   }
+
+//   useEffect(() => {
+//     fetchUserTasks();
+//     // if you want the calendar to refresh when view or date changes, add deps here
+//     // eslint-disable-next-line react-hooks/exhaustive-deps
+//   }, []);
 
 //   const eventsByDate = useMemo(() => {
 //     const map = new Map();
@@ -300,15 +341,13 @@
 //   function today() { setCurrentDate(new Date()); }
 
 //   const containerBg = theme === "dark" ? "bg-gradient-to-br from-slate-900 to-slate-800" : "bg-gradient-to-br from-white via-slate-50 to-indigo-50";
-//   const headerH = "12rem"; // adjust if your header + toolbar height differs
+//   const headerH = "12rem";
 
 //   return (
 //     <div className={`min-h-screen transition-colors duration-300 ${containerBg}`}>
 //       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 
-//         {/* sticky top: header + toolbar remain fixed while calendar scrolls */}
 //         <div className="sticky top-0 z-20">
-//           {/* Header */}
 //           <div className="py-8">
 //             <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
 //               <div>
@@ -334,7 +373,6 @@
 //               </div>
 //             </div>
 
-//             {/* Toolbar */}
 //             <Card className={`mb-6 ${theme === "dark" ? "bg-slate-800 border-slate-700" : "bg-white"}`}>
 //               <CardContent className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 py-3 ${theme === "dark" ? "text-slate-200" : "text-slate-700"}`}>
 //                 <div className="flex items-center gap-3">
@@ -365,7 +403,6 @@
 //           </div>
 //         </div>
 
-//         {/* Calendar content: scrollable region. We set a max-height calc so it scrolls within the viewport. */}
 //         <div
 //           className="grid grid-cols-1 gap-6 no-scrollbar"
 //           style={{ maxHeight: `calc(100vh - ${headerH})`, overflowY: "auto", overflowX: "hidden" }}
@@ -444,12 +481,11 @@
 //                               const dayKey = format(day, 'yyyy-MM-dd');
 //                               const evs = eventsByDate.get(dayKey) || [];
 //                               const slotEvents = evs.filter((ev) => {
-//                                 // skip events with missing start/end
 //                                 if (!ev?.start || !ev?.end) return false;
 //                                 const s = timeToMinutes(ev.start);
 //                                 const e = timeToMinutes(ev.end);
 //                                 if (s == null || e == null) return false;
-//                                 const slotStart = timeToMinutes(t); // t is the slot label like "09:00" - should be valid
+//                                 const slotStart = timeToMinutes(t);
 //                                 if (slotStart == null) return false;
 //                                 const slotEnd = slotStart + SLOT_STEP_MIN;
 //                                 return !(e <= slotStart || s >= slotEnd);
@@ -537,7 +573,6 @@
 
 //       </div>
 
-//       {/* Slot modal and Event modal */}
 //       <SlotModal
 //         open={openSlotModal}
 //         onClose={() => setOpenSlotModal(false)}
@@ -557,13 +592,11 @@
 //             })
 //             : []
 //         }
-
 //         onCreate={(date, start) => openModalForDate(date, start, 60)}
 //       />
 
 //       <EventModal open={openModal} onClose={() => setOpenModal(false)} initialValues={initialValues} onSave={handleSave} isDark={theme === "dark"} />
 
-//       {/* hide scrollbar for calendar view only */}
 //       <style>{`
 //         .no-scrollbar::-webkit-scrollbar { display: none; }
 //         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -589,6 +622,8 @@ import {
   isSameMonth,
   startOfMonth,
   startOfWeek,
+  isBefore,
+  startOfDay,
 } from "date-fns";
 import {
   Calendar as CalendarIcon,
@@ -753,6 +788,9 @@ export default function SchedulePage() {
   const [loadingEvents, setLoadingEvents] = useState(true);
   const API_BASE = "http://localhost:5000";
 
+  // compute today's start for date comparisons
+  const todayStart = useMemo(() => startOfDay(new Date()), []);
+
   function mapTaskToEvent(task) {
     const start = task.startTime ? new Date(task.startTime) : null;
     const end = task.endTime ? new Date(task.endTime) : null;
@@ -845,6 +883,9 @@ export default function SchedulePage() {
   }
 
   function openModalForDate(dateObj, suggestedStartTime = null, durationMin = 60) {
+    // Prevent opening modal for past dates
+    if (isBefore(startOfDay(dateObj), todayStart)) return;
+
     const key = format(dateObj, "yyyy-MM-dd");
     let start = "09:00";
     let end = "10:00";
@@ -1001,8 +1042,22 @@ export default function SchedulePage() {
                       const isToday = isSameDay(day, new Date());
                       const evs = eventsByDate.get(key) || [];
 
+                      // disable past dates
+                      const dayStart = startOfDay(day);
+                      const isPast = isBefore(dayStart, todayStart);
+
                       return (
-                        <button key={idx} onClick={() => { openModalForDate(day); setSelectedSlot({ date: day, start: null }); }} className={`relative group p-3 text-left min-h-[96px] rounded-lg transition-shadow hover:shadow-lg ${inMonth ? (theme === "dark" ? 'bg-slate-700' : 'bg-white') : (theme === "dark" ? 'bg-slate-800 text-slate-500' : 'bg-slate-50 text-slate-400')}`}>
+                        <button
+                          key={idx}
+                          onClick={() => {
+                            if (isPast) return;
+                            openModalForDate(day);
+                            setSelectedSlot({ date: day, start: null });
+                          }}
+                          aria-disabled={isPast}
+                          disabled={isPast}
+                          className={`relative group p-3 text-left min-h-[96px] rounded-lg transition-shadow hover:shadow-lg ${inMonth ? (theme === "dark" ? 'bg-slate-700' : 'bg-white') : (theme === "dark" ? 'bg-slate-800 text-slate-500' : 'bg-slate-50 text-slate-400') } ${isPast ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
                           <div className="flex items-start justify-between">
                             <div className="flex items-center gap-2">
                               <div className={`w-8 h-8 flex items-center justify-center rounded-full text-sm font-semibold ${isToday ? 'bg-indigo-600 text-white' : (theme === 'dark' ? 'bg-slate-600 text-slate-100' : '')}`}>{format(day, 'd')}</div>
@@ -1068,15 +1123,24 @@ export default function SchedulePage() {
                                 return !(e <= slotStart || s >= slotEnd);
                               });
 
-
                               const isSelected = selectedSlot && selectedSlot.date && format(selectedSlot.date, 'yyyy-MM-dd') === dayKey && selectedSlot.start === t;
+
+                              // disable entire day column if the day is before today
+                              const dayStart = startOfDay(day);
+                              const isPastDay = isBefore(dayStart, todayStart);
 
                               return (
                                 <div key={dayIdx} style={{ gridColumn: dayIdx + 2, gridRow: row }} className="p-1">
                                   <button
                                     type="button"
-                                    onClick={() => { setSelectedSlot({ date: day, start: t }); setOpenSlotModal(true); }}
-                                    className={`w-full h-full rounded-lg transition-shadow flex items-center justify-between px-3 ${isSelected ? (theme === 'dark' ? "bg-indigo-900/30 ring-1 ring-indigo-400/30" : "bg-indigo-50 ring-1 ring-indigo-200") : (theme === 'dark' ? "bg-transparent hover:bg-white/6" : "bg-gray-50 hover:bg-gray-100")}`}
+                                    onClick={() => {
+                                      if (isPastDay) return;
+                                      setSelectedSlot({ date: day, start: t });
+                                      setOpenSlotModal(true);
+                                    }}
+                                    aria-disabled={isPastDay}
+                                    disabled={isPastDay}
+                                    className={`w-full h-full rounded-lg transition-shadow flex items-center justify-between px-3 ${isSelected ? (theme === 'dark' ? "bg-indigo-900/30 ring-1 ring-indigo-400/30" : "bg-indigo-50 ring-1 ring-indigo-200") : (theme === 'dark' ? "bg-transparent hover:bg-white/6" : "bg-gray-50 hover:bg-gray-100")}` + (isPastDay ? ' opacity-50 cursor-not-allowed' : '')}
                                     style={theme === 'dark' ? { background: 'rgba(255,255,255,0.06)', height: '100%' } : { height: '100%' }}
                                   >
                                     <div className="text-sm truncate">{slotEvents[0] ? slotEvents[0].title : ""}</div>
@@ -1124,12 +1188,21 @@ export default function SchedulePage() {
                               return !(e <= slotStart || s >= slotEnd);
                             });
 
+                            // disable day if currentDate is before today
+                            const isPastDay = isBefore(startOfDay(currentDate), todayStart);
+
                             return (
                               <div key={t + slotIdx} style={{ height: SLOT_HEIGHT_PX }}>
                                 <button
                                   type="button"
-                                  onClick={() => { setSelectedSlot({ date: currentDate, start: t }); setOpenSlotModal(true); }}
-                                  className={`w-full h-full rounded-lg transition-shadow flex items-center justify-between px-4 ${isSelected ? (theme === 'dark' ? "bg-indigo-900/30 ring-1 ring-indigo-400/30" : "bg-indigo-50 ring-1 ring-indigo-200") : (theme === 'dark' ? "bg-transparent hover:bg-white/3" : "bg-gray-50 hover:bg-gray-100")}`}
+                                  onClick={() => {
+                                    if (isPastDay) return;
+                                    setSelectedSlot({ date: currentDate, start: t });
+                                    setOpenSlotModal(true);
+                                  }}
+                                  aria-disabled={isPastDay}
+                                  disabled={isPastDay}
+                                  className={`w-full h-full rounded-lg transition-shadow flex items-center justify-between px-4 ${isSelected ? (theme === 'dark' ? "bg-indigo-900/30 ring-1 ring-indigo-400/30" : "bg-indigo-50 ring-1 ring-indigo-200") : (theme === 'dark' ? "bg-transparent hover:bg-white/3" : "bg-gray-50 hover:bg-gray-100")}` + (isPastDay ? ' opacity-50 cursor-not-allowed' : '')}
                                 >
                                   <div className="text-sm truncate">{slotEvents[0] ? slotEvents[0].title : ""}</div>
                                   <div>{slotEvents.length > 0 && <div className={`w-3 h-3 rounded-full ${slotEvents[0].color}`} />}</div>
