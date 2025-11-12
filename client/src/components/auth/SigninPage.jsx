@@ -75,6 +75,11 @@ export default function SignIn() {
     } else {
       // Save JWT token in localStorage
       localStorage.setItem("token", result.token);
+      if (result?.user?.email) localStorage.setItem("userEmail", result.user.email);
+      if (result?.user?.id || result?.user?._id) {
+        localStorage.setItem("userId", result.user.id || result.user._id);
+      }
+      if (role) localStorage.setItem("role", role);
       toast.success("Welcome back 🎉", { position: "top-center" });
      if(role=="executive") navigate("/executive");
      else navigate("/secretary")
@@ -120,8 +125,9 @@ const handleGoogleSignIn = async () => {
     });
 
     // Navigate based on role
-    if (data.user.role === "executive") navigate("/executive");
-    else if (data.user.role === "secretary") navigate("/secretary");
+  if (data.user.role === "executive") navigate("/executive");
+  else if (data.user.role === "secretary") navigate("/secretary");
+  if (data.user.role) localStorage.setItem("role", data.user.role);
 
   } catch (error) {
     console.error("Google sign-in error:", error);

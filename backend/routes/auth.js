@@ -29,10 +29,9 @@ router.post('/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Invalid password' });
 
-    // Create token
- // when creating token (server-side)
-const payload = { id: user._id, role: user.role };
-const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
+  // Create token
+  const payload = { id: user._id, role: user.role, email: user.email };
+  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
 
 
     res.json({

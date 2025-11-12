@@ -26,7 +26,7 @@ router.post('/register', async (req, res) => {
     const executive = new Executive({ name, email, password: hash, department });
     await executive.save();
 
-    const payload = { id: executive._id, role: executive.role };
+  const payload = { id: executive._id, role: executive.role, email: executive.email };
     const token = jwt.sign(payload, process.env.JWT_SECRET || 'dev_secret', { expiresIn: '5h' });
 
     res.status(201).json({ token, executive: { id: executive._id, name: executive.name, email: executive.email } });
@@ -48,7 +48,7 @@ router.post('/login', async (req, res) => {
     const isMatch = await bcrypt.compare(password, executive.password);
     if (!isMatch) return res.status(400).json({ msg: 'Invalid credentials' });
 
-    const payload = { id: executive._id, role: executive.role };
+  const payload = { id: executive._id, role: executive.role, email: executive.email };
     const token = jwt.sign(payload, process.env.JWT_SECRET || 'dev_secret', { expiresIn: '5h' });
 
     res.json({ token, executive: { id: executive._id, name: executive.name, email: executive.email } });

@@ -6,6 +6,12 @@ const TaskSchema = new mongoose.Schema({
   startTime: { type: Date, required: true },
   endTime: { type: Date },
   description: { type: String },
+  meetingId: { type: mongoose.Schema.Types.ObjectId, ref: 'Meeting' },
+  status: {
+    type: String,
+    enum: ['scheduled', 'cancelled', 'completed'],
+    default: 'scheduled',
+  },
 });
 
 const LeaveSchema = new mongoose.Schema({
