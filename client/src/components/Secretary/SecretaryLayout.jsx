@@ -88,7 +88,6 @@ export default function SecretaryLayout() {
 
   const navItems = [
     { name: "Dashboard", icon: Home },
-    { name: "Schedule Meeting", icon: Calendar },
     { name: "Rearrange Appointments", icon: Users },
     { name: "Reports", icon: BarChart2 },
     { name: "Notifications", icon: Bell },
