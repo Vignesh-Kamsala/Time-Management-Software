@@ -15,6 +15,7 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+
 // connect DB
 mongoose.connect(process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/yourdb')
   .then(() => console.log('MongoDB connected successfully'))
@@ -32,6 +33,7 @@ app.use('/api/meetings', require('./routes/events'));
 
 app.get('/', (req, res) => res.send('Server is running and operational!'));
 
+// app.use("/api/email", require("./routes/email"));
 
 
 
