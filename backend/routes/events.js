@@ -92,6 +92,35 @@ async function buildConflictReport({ execs, start, end }) {
   }, []);
 }
 
+function normalizeConflictItem(raw, fallbackType = 'task') {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      type: fallbackType,
+      refId: null,
+      title: 'Busy',
+      startTime: null,
+      endTime: null,
+      notes: null,
+      status: null,
+    };
+  }
+
+  const resolvedType = typeof raw.type === 'string' && raw.type.trim() ? raw.type.trim() : fallbackType;
+
+  const start = raw.startTime ? new Date(raw.startTime) : null;
+  const end = raw.endTime ? new Date(raw.endTime) : null;
+
+  return {
+    type: resolvedType,
+    refId: raw.refId || raw._id || raw.meetingId || null,
+    title: raw.title || raw.notes || raw.description || 'Busy',
+    startTime: start && !Number.isNaN(start.getTime()) ? start : null,
+    endTime: end && !Number.isNaN(end.getTime()) ? end : null,
+    notes: raw.notes || raw.description || null,
+    status: raw.status || null,
+  };
+}
+
 router.post('/create-and-addtasks', auth, async (req, res) => {
   try {
     const {
@@ -317,6 +346,207 @@ router.post('/create-and-addtasks', auth, async (req, res) => {
     });
   } catch (err) {
     console.error('create-and-addtasks error:', err);
+    return res.status(500).json({ msg: 'Server error', error: err.message });
+  }
+});
+
+router.post('/conflicts/manual', auth, async (req, res) => {
+  try {
+    const {
+      title,
+      startTime,
+      endTime,
+      participantEmails = [],
+      venue = '',
+      project = '',
+      notes = '',
+      overlaps = [],
+    } = req.body || {};
+
+    if (!title || !startTime || !endTime) {
+      return res.status(400).json({ msg: 'title, startTime, and endTime are required' });
+    }
+
+    const parsedStart = new Date(startTime);
+    const parsedEnd = new Date(endTime);
+    if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) {
+      return res.status(400).json({ msg: 'Invalid startTime or endTime' });
+    }
+    if (parsedEnd.getTime() <= parsedStart.getTime()) {
+      return res.status(400).json({ msg: 'endTime must be after startTime' });
+    }
+
+    const normalizedEmails = Array.from(
+      new Set(
+        (Array.isArray(participantEmails) ? participantEmails : [])
+          .map((email) => (typeof email === 'string' ? email.trim().toLowerCase() : ''))
+          .filter(Boolean)
+      )
+    );
+
+    const creatorId = req.user?.id || null;
+    const creatorEmail = typeof req.user?.email === 'string' ? req.user.email.toLowerCase() : null;
+    if (creatorEmail && !normalizedEmails.includes(creatorEmail)) {
+      normalizedEmails.push(creatorEmail);
+    }
+
+    if (!normalizedEmails.length) {
+      return res.status(400).json({ msg: 'At least one participant email is required' });
+    }
+
+    const execs = await Executive.find({ email: { $in: normalizedEmails } }).lean();
+
+    const conflictReport = await buildConflictReport({ execs, start: parsedStart, end: parsedEnd });
+
+    const overlapsMap = new Map();
+
+    const addOverlap = ({ execDoc, email, conflicts }) => {
+      const resolvedEmail = email || (execDoc?.email ? execDoc.email.toLowerCase() : null);
+      const key = execDoc ? String(execDoc._id) : resolvedEmail;
+      if (!key) return;
+
+      if (!overlapsMap.has(key)) {
+        overlapsMap.set(key, {
+          executive: execDoc ? execDoc._id : undefined,
+          executiveEmail: resolvedEmail,
+          conflicts: [],
+        });
+      }
+
+      const target = overlapsMap.get(key);
+      (conflicts || []).forEach((item) => {
+        const prepared = normalizeConflictItem(item, item?.type || 'task');
+        if (prepared) {
+          target.conflicts.push(prepared);
+        }
+      });
+    };
+
+    conflictReport.forEach((entry) => {
+      const execDoc = execs.find((ex) => String(ex._id) === String(entry.executive));
+      addOverlap({
+        execDoc,
+        email: entry.executiveEmail || (execDoc?.email ? execDoc.email.toLowerCase() : null),
+        conflicts: entry.conflicts,
+      });
+    });
+
+    const providedOverlaps = Array.isArray(overlaps) ? overlaps : [];
+    providedOverlaps.forEach((entry) => {
+      const emailCandidate =
+        typeof entry?.executiveEmail === 'string'
+          ? entry.executiveEmail.trim().toLowerCase()
+          : typeof entry?.email === 'string'
+          ? entry.email.trim().toLowerCase()
+          : null;
+      const execDoc = emailCandidate
+        ? execs.find((ex) => ex.email && ex.email.toLowerCase() === emailCandidate)
+        : null;
+      addOverlap({
+        execDoc,
+        email: emailCandidate,
+        conflicts: Array.isArray(entry?.conflicts) ? entry.conflicts : [],
+      });
+    });
+
+    const overlapsPayload = Array.from(overlapsMap.values())
+      .map((entry) => ({
+        executive: entry.executive,
+        executiveEmail: entry.executiveEmail,
+        conflicts: entry.conflicts,
+      }))
+      .filter((entry) => entry.conflicts.length > 0);
+
+    if (!overlapsPayload.length) {
+      return res.status(409).json({ msg: 'No conflicts detected for the provided time range.' });
+    }
+
+    const invited = normalizedEmails.map((email) => {
+      const execDoc = execs.find((ex) => ex.email && ex.email.toLowerCase() === email);
+      return {
+        email,
+        execId: execDoc ? execDoc._id : null,
+        status: 'invited',
+      };
+    });
+
+    const meetingDoc = await Meeting.create({
+      title,
+      startTime: parsedStart,
+      endTime: parsedEnd,
+      venue,
+      project,
+      createdBy: creatorId,
+      participants: creatorId ? [creatorId] : [],
+      invited,
+      status: 'conflict',
+      hasConflict: true,
+      conflictStatus: 'open',
+      conflictNotes: notes || 'Awaiting secretary coordination',
+    });
+
+    const conflictDoc = await Conflict.create({
+      meeting: meetingDoc._id,
+      requestedBy: creatorId,
+      participantEmails: normalizedEmails,
+      participantIds: execs.map((ex) => ex._id),
+      conflictReason: notes || 'Scheduling overlap reported by executive',
+      overlaps: overlapsPayload,
+      history: [
+        {
+          action: 'manual_conflict_logged',
+          notes: notes || 'Conflict logged via executive request',
+          actor: creatorId,
+          actorRole: 'executive',
+        },
+      ],
+    });
+
+    const executiveIdsForNotification = new Set(execs.map((ex) => String(ex._id)));
+    if (creatorId) executiveIdsForNotification.add(String(creatorId));
+
+    const participantNames = execs
+      .map((ex) => ex.name || ex.email)
+      .filter(Boolean)
+      .join(', ');
+
+    await notifySecretariesForExecutives({
+      executiveIds: Array.from(executiveIdsForNotification),
+      title: `Manual conflict: ${title}`,
+      message: `A manual conflict has been logged for ${title}. Please review the conflict queue.`,
+      channel: 'conflict',
+      severity: 'warning',
+      meetingId: meetingDoc._id,
+      conflictId: conflictDoc._id,
+      metadata: {
+        meetingTitle: title,
+        startTime: parsedStart,
+        endTime: parsedEnd,
+        participantEmails: normalizedEmails,
+      },
+      emailSubject: `Manual conflict logged for ${title}`,
+      emailText: `The meeting "${title}" could not be scheduled automatically. Participants: ${
+        participantNames || normalizedEmails.join(', ')
+      }.`,
+    }).catch((err) => console.error('notifySecretariesForExecutives manual conflict error:', err));
+
+    const populatedConflict = await Conflict.findById(conflictDoc._id)
+      .populate('meeting', 'title startTime endTime status conflictStatus venue project')
+      .populate('requestedBy', 'name email')
+      .populate('overlaps.executive', 'name email')
+      .lean();
+
+    const populatedMeeting = await Meeting.findById(meetingDoc._id)
+      .populate('participants', 'name email')
+      .lean();
+
+    return res.status(201).json({
+      msg: 'Conflict logged and secretary notified.',
+      meeting: populatedMeeting,
+      conflict: populatedConflict,
+    });
+  } catch (err) {
+    console.error('POST /api/events/conflicts/manual error:', err);
     return res.status(500).json({ msg: 'Server error', error: err.message });
   }
 });

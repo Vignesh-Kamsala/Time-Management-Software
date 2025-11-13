@@ -203,6 +203,7 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
   const [checkingEmail, setCheckingEmail] = useState(false);
 
   const [pendingConflictGuest, setPendingConflictGuest] = useState(null);
+  const [loggingConflict, setLoggingConflict] = useState(false);
 
   const startAnchor = useRef(null);
   const endAnchor = useRef(null);
@@ -299,6 +300,50 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
     }
   }
 
+  const logConflictTicket = async (guest) => {
+    const API = "http://localhost:5000/api/meetings/conflicts/manual";
+    const participantEmails = Array.from(
+      new Set([
+        ...addedGuests.map((g) => g.email),
+        guest?.email || null,
+      ].filter(Boolean))
+    );
+
+    const payload = {
+      title: form.title || initialValues.title || "Untitled",
+      startTime: buildISO(form.date, form.start),
+      endTime: buildISO(form.date, form.end),
+      venue: form.venue || "",
+      project: form.project || initialValues.project || "",
+      notes: form.notes || "",
+      participantEmails,
+      overlaps: [
+        {
+          executiveEmail: guest?.email || null,
+          conflicts: Array.isArray(guest?.conflicts) ? guest.conflicts : [],
+        },
+      ],
+    };
+
+    const token = localStorage.getItem("token");
+    const res = await fetch(API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = data?.msg || data?.error || "Failed to log conflict for secretary";
+      throw new Error(message);
+    }
+
+    return data;
+  };
+
   const handleAddAndCheck = async () => {
     const email = (singleGuest || "").trim().toLowerCase();
     if (!email) {
@@ -341,24 +386,39 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
     setAddedGuests((s) => s.filter((g) => g.email !== email));
   };
 
-  const handleConflictDecision = (decision) => {
+  const handleConflictDecision = async (decision) => {
     if (!pendingConflictGuest) return;
 
     if (decision === "secretary") {
-      setAddedGuests((prev) => [
-        ...prev,
-        {
-          email: pendingConflictGuest.email,
-          status: "needs-secretary",
-          conflicts: pendingConflictGuest.conflicts,
-        },
-      ]);
-      setSingleGuest("");
-      toast.success(`Secretary will coordinate ${pendingConflictGuest.email}'s schedule.`);
-    } else {
-      toast("You can pick another slot for the meeting.");
+      setLoggingConflict(true);
+      try {
+        await logConflictTicket(pendingConflictGuest);
+        setAddedGuests((prev) => {
+          if (prev.some((guest) => guest.email === pendingConflictGuest.email)) {
+            return prev;
+          }
+          return [
+            ...prev,
+            {
+              email: pendingConflictGuest.email,
+              status: "needs-secretary",
+              conflicts: pendingConflictGuest.conflicts,
+            },
+          ];
+        });
+        setSingleGuest("");
+        toast.success(`Secretary will coordinate ${pendingConflictGuest.email}'s schedule.`);
+        setPendingConflictGuest(null);
+      } catch (err) {
+        console.error("Manual conflict escalation error:", err);
+        toast.error(err.message || "Failed to notify the secretary. Please try again.");
+      } finally {
+        setLoggingConflict(false);
+      }
+      return;
     }
 
+    toast("You can pick another slot for the meeting.");
     setPendingConflictGuest(null);
   };
 
@@ -637,8 +697,8 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
           <Button onClick={handleSave} disabled={loading || addedGuests.length === 0}>{loading ? "Saving..." : "Save"}</Button>
         </div>
         {pendingConflictGuest && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center px-4">
-            <div className="absolute inset-0 rounded-2xl bg-black/70 backdrop-blur-sm" />
+          <div className=" inset-0 z-30 flex items-center justify-center px-4">
+            <div className=" inset-0 rounded-2xl bg-black/70 backdrop-blur-sm" />
             <div className={`relative w-full max-w-md rounded-xl border p-6 shadow-xl ${isDark ? "bg-slate-900 border-slate-700 text-gray-100" : "bg-white border-slate-200 text-gray-900"}`}>
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -669,11 +729,18 @@ export default function EventModal({ open, onClose, initialValues = {}, onSave, 
               )}
 
               <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
-                <Button variant="ghost" onClick={() => handleConflictDecision("reschedule")}>
+                <Button
+                  variant="ghost"
+                  onClick={() => handleConflictDecision("reschedule")}
+                  disabled={loggingConflict}
+                >
                   I&apos;ll pick another time
                 </Button>
-                <Button onClick={() => handleConflictDecision("secretary")}>
-                  Ask secretary to coordinate
+                <Button
+                  onClick={() => handleConflictDecision("secretary")}
+                  disabled={loggingConflict}
+                >
+                  {loggingConflict ? "Notifying secretary…" : "Ask secretary to coordinate"}
                 </Button>
               </div>
             </div>
