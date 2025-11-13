@@ -32,13 +32,6 @@ app.use('/api/meetings', require('./routes/events'));
 
 app.get('/', (req, res) => res.send('Server is running and operational!'));
 
-
-
-
-const authRoutes = require('./routes/auth');
-const ExecutiveSchema = require('./schema/ExecutiveSchema');
-app.use('/api/auth', authRoutes);
-
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
