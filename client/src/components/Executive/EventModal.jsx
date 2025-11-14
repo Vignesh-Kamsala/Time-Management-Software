@@ -897,7 +897,7 @@ async function checkAvailability(email) {
             color: "bg-indigo-600",
             type: "meeting",
           });
-        toast.success("Created locally (server returned no meeting object)");
+        toast.success("Created locally (server returnd no meeting object)");
         onClose && onClose();
         return;
       }
