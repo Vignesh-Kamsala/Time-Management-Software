@@ -13,7 +13,7 @@ export default function SecretaryDashboard({ user, loading }) {
   const [summary, setSummary] = useState({ open: 0, in_progress: 0, resolved: 0, escalated: 0, openMeetings: 0 });
   const [conflicts, setConflicts] = useState([]);
   const [loadingConflicts, setLoadingConflicts] = useState(
-    false);
+    alse);
   const [error, setError] = useState(null);
 
   const token = useMemo(() => (typeof window !== "undefined" ? localStorage.getItem("token") : null), []);

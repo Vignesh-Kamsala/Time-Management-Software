@@ -865,16 +865,34 @@ router.post('/:id/cancel', auth, async (req, res) => {
     if (creatorEmail) allEmailsSet.add(creatorEmail);
     const allEmails = Array.from(allEmailsSet).filter(Boolean);
 
+    // --- Format meeting date/time for emails (guarded & timezone-aware) ---
+    const safeStart = meeting.startTime ? new Date(meeting.startTime) : null;
+    const safeEnd = meeting.endTime ? new Date(meeting.endTime) : null;
+
+    const tz = 'Asia/Kolkata'; // change if you need a different timezone
+    const meetingDate = safeStart && !Number.isNaN(safeStart.getTime())
+      ? safeStart.toLocaleDateString('en-IN', { timeZone: tz })
+      : 'TBD';
+
+    const meetingStart = safeStart && !Number.isNaN(safeStart.getTime())
+      ? safeStart.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: tz })
+      : 'TBD';
+
+    const meetingEnd = safeEnd && !Number.isNaN(safeEnd.getTime())
+      ? safeEnd.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: tz })
+      : 'TBD';
+
     // Send cancellation email (best-effort)
     if (allEmails.length) {
-     const subject = `❗ Meeting Cancelled: ${meeting.title} — ${meetingDate} ${meetingStart}`;
+      const safeTitle = meeting.title || 'Meeting';
+      const subject = `❗ Meeting Cancelled: ${safeTitle} — ${meetingDate} ${meetingStart}`;
 
-const text =
+      const text =
 `Dear Participant,
 
 The following meeting has been cancelled:
 
-📝 Title: ${meeting.title}
+📝 Title: ${safeTitle}
 📅 Date: ${meetingDate}
 ⏰ Time: ${meetingStart} – ${meetingEnd}
 📍 Venue: ${meeting.venue || "TBD"}
@@ -887,11 +905,18 @@ Thank you,
 TMS – Meeting Scheduler`;
 
       try {
+        console.log('Sending cancellation email to:', allEmails, 'subject:', subject);
+
+        // Ensure sendMail is awaited so any errors are caught here
         await sendMail({ to: allEmails, subject, text });
+
+        console.log('Cancellation emails attempted');
       } catch (mailErr) {
         console.error('Error sending cancellation emails:', mailErr);
         // do not undo cancellation because of email failure
       }
+    } else {
+      console.log('No recipient emails found for meeting cancellation:', meeting._id);
     }
 
     const populated = await Meeting.findById(meeting._id)
