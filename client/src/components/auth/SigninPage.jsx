@@ -257,15 +257,7 @@ const handleGoogleSignIn = async () => {
               <span>Sign in with Google</span>
             </Button>
 
-            <p className={`${descriptionColor} text-center text-sm mt-4`}>
-              Don’t have an account?{" "}
-              <span
-                className="text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer transition-colors"
-                onClick={() => navigate("/signup")}
-              >
-                Sign up
-              </span>
-            </p>
+         
           </CardFooter>
         </Card>
       </div>
