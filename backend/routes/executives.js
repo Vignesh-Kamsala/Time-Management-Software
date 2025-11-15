@@ -9,7 +9,6 @@ console.log('Executive imported:', typeof Executive === 'function' ? 'Model OK' 
 const auth = require('../middleware/authMiddleware');
 
 // Apply protection to all routes below
-router.use(auth);
 
 // POST /api/executive/register
 router.post('/register', async (req, res) => {
@@ -37,6 +36,8 @@ router.post('/register', async (req, res) => {
 });
 
 // POST /api/executive/login
+router.use(auth);
+
 router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ msg: 'Missing fields' });

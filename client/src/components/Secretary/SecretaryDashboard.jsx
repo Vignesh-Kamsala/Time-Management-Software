@@ -6,14 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableRow, TableCell, TableBody } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 
-const API_BASE = "https://time-management-software.onrender.com";
+const API_BASE = "http://localhost:5000";
 
 export default function SecretaryDashboard({ user, loading }) {
   const { isDark } = useContext(ThemeContext);
   const [summary, setSummary] = useState({ open: 0, in_progress: 0, resolved: 0, escalated: 0, openMeetings: 0 });
   const [conflicts, setConflicts] = useState([]);
   const [loadingConflicts, setLoadingConflicts] = useState(
-    alse);
+   false);
   const [error, setError] = useState(null);
 
   const token = useMemo(() => (typeof window !== "undefined" ? localStorage.getItem("token") : null), []);
