@@ -85,7 +85,7 @@ export default function SignIn() {
      else navigate("/secretary")
     }
   } catch (error) {
-    setBackendError("Server error. Try again later.");
+    setBackendError("Invalid Credentials");
     console.error(error);
   }
 
