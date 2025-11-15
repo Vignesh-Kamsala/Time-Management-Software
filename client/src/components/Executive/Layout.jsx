@@ -67,9 +67,10 @@ export default function ExecutiveLayout() {
         const data = await res.json();
         const userData = data?.user ?? data;
 
-        setUser(userData);
-        if (userData?.email) localStorage.setItem("userEmail", userData.email);
-        if (userData?._id) localStorage.setItem("userId", userData._id);
+  setUser(userData);
+  if (userData?.email) localStorage.setItem("userEmail", userData.email);
+  if (userData?._id) localStorage.setItem("userId", userData._id);
+  if (userData?.role) localStorage.setItem("role", userData.role);
       } catch (err) {
         console.error("Failed to fetch user:", err);
         setError("Failed to fetch user info");
@@ -92,7 +93,8 @@ export default function ExecutiveLayout() {
     localStorage.removeItem("token");
     localStorage.removeItem("userEmail");
     localStorage.removeItem("userId");
-    navigate("/signin");
+  localStorage.removeItem("role");
+  navigate("/signin");
   };
 
   const navItems = [

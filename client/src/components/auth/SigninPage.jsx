@@ -75,12 +75,17 @@ export default function SignIn() {
     } else {
       // Save JWT token in localStorage
       localStorage.setItem("token", result.token);
+      if (result?.user?.email) localStorage.setItem("userEmail", result.user.email);
+      if (result?.user?.id || result?.user?._id) {
+        localStorage.setItem("userId", result.user.id || result.user._id);
+      }
+      if (role) localStorage.setItem("role", role);
       toast.success("Welcome back 🎉", { position: "top-center" });
      if(role=="executive") navigate("/executive");
      else navigate("/secretary")
     }
   } catch (error) {
-    setBackendError("Server error. Try again later.");
+    setBackendError("Invalid Credentials");
     console.error(error);
   }
 
@@ -112,16 +117,17 @@ const handleGoogleSignIn = async () => {
 
     // Save token and basic info (same as normal login)
     localStorage.setItem("token", data.token);
-    localStorage.setItem("userEmail", data.user.email);
-    localStorage.setItem("userId", data.user._id);
+    // localStorage.setItem("userEmail", data.user.email);
+    // localStorage.setItem("userId", data.user._id);
 
     toast.success(`Welcome back ${data.user.name || ""} 🎉`, {
       position: "top-center",
     });
 
     // Navigate based on role
-    if (data.user.role === "executive") navigate("/executive");
-    else if (data.user.role === "secretary") navigate("/secretary");
+  if (data.user.role === "executive") navigate("/executive");
+  else if (data.user.role === "secretary") navigate("/secretary");
+  if (data.user.role) localStorage.setItem("role", data.user.role);
 
   } catch (error) {
     console.error("Google sign-in error:", error);
@@ -130,12 +136,12 @@ const handleGoogleSignIn = async () => {
 };
 
 
-  useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((currentUser) => {
-      if (currentUser) navigate("/signin", { replace: true });
-    });
-    return () => unsubscribe();
-  }, [navigate]);
+  // useEffect(() => {
+  //   const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+  //     if (currentUser) navigate("/signin", { replace: true });
+  //   });
+  //   return () => unsubscribe();
+  // }, [navigate]);
 
   const bgGradient = isDark
     ? "bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#312e81]"
@@ -251,15 +257,7 @@ const handleGoogleSignIn = async () => {
               <span>Sign in with Google</span>
             </Button>
 
-            <p className={`${descriptionColor} text-center text-sm mt-4`}>
-              Don’t have an account?{" "}
-              <span
-                className="text-indigo-400 hover:text-indigo-300 font-medium cursor-pointer transition-colors"
-                onClick={() => navigate("/signup")}
-              >
-                Sign up
-              </span>
-            </p>
+         
           </CardFooter>
         </Card>
       </div>

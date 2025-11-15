@@ -23,10 +23,17 @@ const MeetingSchema = new mongoose.Schema({
   invited: [InvitedSchema],
   status: {
     type: String,
-    enum: ['pending', 'scheduled', 'cancelled', 'completed'],
+    enum: ['pending', 'scheduled', 'cancelled', 'completed', 'conflict'],
     default: 'pending',
   },
   project: { type: String },
+  hasConflict: { type: Boolean, default: false },
+  conflictStatus: {
+    type: String,
+    enum: ['open', 'in_progress', 'resolved', 'escalated'],
+    default: undefined,
+  },
+  conflictNotes: { type: String },
 }, { timestamps: true });
 
 module.exports = mongoose.models?.Meeting || mongoose.model('Meeting', MeetingSchema);

@@ -17,8 +17,8 @@ export default function ProtectedRoute({ requiredRole }) {
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    // Quick local check for token
     const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    const role = typeof window !== "undefined" ? localStorage.getItem("role") : null;
 
     if (!token) {
       setAllowed(false);
@@ -26,10 +26,15 @@ export default function ProtectedRoute({ requiredRole }) {
       return;
     }
 
-    // Token exists — allow. (Optional: add server validation here)
+  if (requiredRole && role !== requiredRole) {
+      setAllowed(false);
+      setChecked(true);
+      return;
+    }
+
     setAllowed(true);
     setChecked(true);
-  }, []);
+  }, [requiredRole]);
 
   // While checking token presence show nothing or a spinner
   if (!checked) return <div className="p-8 text-center">Checking authentication…</div>;

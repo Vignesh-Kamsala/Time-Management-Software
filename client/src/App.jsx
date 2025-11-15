@@ -45,11 +45,9 @@ function App() {
           <Route path="/clock" element={<MyTimePickerComponent />} />
 
           {/* 👤 User Routes */}
-          <Route path="/user" element={<UsersList />} />
-          <Route path="/userList" element={<MainComponent />} />
 
           {/* 🧑 Executive Routes (nested under layout) */}
-          <Route element={<ProtectedRoute />}>
+          <Route element={<ProtectedRoute requiredRole="executive" />}>
             <Route path="/executive" element={<ExecutiveLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="dashboard" element={<Dashboard />} />
@@ -60,7 +58,7 @@ function App() {
             </Route>
           </Route>
           {/* 🧭 Secretary Routes (nested under layout) */}
-          <Route element={<ProtectedRoute />}>
+          <Route element={<ProtectedRoute requiredRole="secretary" />}>
             <Route path="/secretary" element={<SecretaryLayout />}>
               <Route index element={<SecretaryDashboard />} />
               <Route path="dashboard" element={<SecretaryDashboard />} />

@@ -1,209 +1,1139 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
-const auth=require("../middleware/authMiddleware")
+const auth = require('../middleware/authMiddleware');
 const Meeting = require('../schema/EventSchema');
 const Executive = require('../schema/ExecutiveSchema');
+const Conflict = require('../schema/ConflictSchema');
+const { notifySecretariesForExecutives } = require('../services/notificationService');
+const { sendMail } = require('../mail/mail');
 
-router.post('/create-and-addtasks', async (req, res) => {
+function intervalsOverlap(startA, endA, startB, endB) {
+  return startA < endB && startB < endA;
+}
+
+async function buildConflictReport({ execs, start, end }) {
+  if (!execs.length) return [];
+
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+
+  const execIds = execs.map((ex) => ex._id);
+  const execEmails = execs
+    .map((ex) => (ex.email ? ex.email.toLowerCase() : null))
+    .filter(Boolean);
+
+  const meetingConflicts = await Meeting.find({
+    status: { $in: ['pending', 'scheduled', 'conflict'] },
+    startTime: { $lt: end },
+    endTime: { $gt: start },
+    $or: [
+      { participants: { $in: execIds } },
+      { 'invited.execId': { $in: execIds } },
+      { 'invited.email': { $in: execEmails } },
+    ],
+  })
+    .select('title startTime endTime status participants invited project')
+    .lean();
+
+  return execs.reduce((acc, execDoc) => {
+    const execIdStr = String(execDoc._id);
+    const execEmail = execDoc.email?.toLowerCase() || null;
+
+    const taskConflicts = (execDoc.tasks || []).filter((task) => {
+      const taskStart = new Date(task.startTime).getTime();
+      const taskEnd = new Date(task.endTime || task.startTime).getTime();
+      return intervalsOverlap(startMs, endMs, taskStart, taskEnd);
+    });
+
+    const meetingHits = meetingConflicts.filter((meeting) => {
+      const participates = Array.isArray(meeting.participants)
+        ? meeting.participants.map((id) => String(id)).includes(execIdStr)
+        : false;
+
+      const invitedMatch = Array.isArray(meeting.invited)
+        ? meeting.invited.some((entry) => {
+            const entryExec = entry.execId ? String(entry.execId) === execIdStr : false;
+            const entryEmail = entry.email ? entry.email.toLowerCase() === execEmail : false;
+            return entryExec || entryEmail;
+          })
+        : false;
+
+      return participates || invitedMatch;
+    });
+
+    if (!taskConflicts.length && !meetingHits.length) return acc;
+
+    acc.push({
+      executive: execDoc._id,
+      executiveEmail: execDoc.email,
+      conflicts: [
+        ...taskConflicts.map((task) => ({
+          type: 'task',
+          refId: task._id,
+          title: task.title,
+          startTime: task.startTime,
+          endTime: task.endTime,
+          notes: task.description,
+          status: task.status || 'scheduled',
+        })),
+        ...meetingHits.map((meeting) => ({
+          type: 'meeting',
+          refId: meeting._id,
+          title: meeting.title,
+          startTime: meeting.startTime,
+          endTime: meeting.endTime,
+          status: meeting.status,
+          notes: meeting.project,
+        })),
+      ],
+    });
+
+    return acc;
+  }, []);
+}
+
+function normalizeConflictItem(raw, fallbackType = 'task') {
+  if (!raw || typeof raw !== 'object') {
+    return {
+      type: fallbackType,
+      refId: null,
+      title: 'Busy',
+      startTime: null,
+      endTime: null,
+      notes: null,
+      status: null,
+    };
+  }
+
+  const resolvedType = typeof raw.type === 'string' && raw.type.trim() ? raw.type.trim() : fallbackType;
+
+  const start = raw.startTime ? new Date(raw.startTime) : null;
+  const end = raw.endTime ? new Date(raw.endTime) : null;
+
+  return {
+    type: resolvedType,
+    refId: raw.refId || raw._id || raw.meetingId || null,
+    title: raw.title || raw.notes || raw.description || 'Busy',
+    startTime: start && !Number.isNaN(start.getTime()) ? start : null,
+    endTime: end && !Number.isNaN(end.getTime()) ? end : null,
+    notes: raw.notes || raw.description || null,
+    status: raw.status || null,
+  };
+}
+
+// router.post('/create-and-addtasks', auth, async (req, res) => {
+//   try {
+//     const {
+//       title,
+//       startTime,
+//       endTime,
+//       venue,
+//       project,
+//       participantEmails = [],
+//       invited: invitedFromPayload = [],
+//       createdBy,
+//     } = req.body || {};
+
+//     if (!title || !startTime || !endTime || !Array.isArray(participantEmails) || participantEmails.length === 0) {
+//       return res.status(400).json({ msg: 'Missing required fields' });
+//     }
+
+//   const creatorId = req.user?.id || (typeof createdBy === 'string' ? createdBy : createdBy?._id);
+//   const creatorEmail = req.user?.email ? req.user.email.toLowerCase() : null;
+//     if (!creatorId) {
+//       return res.status(401).json({ msg: 'Unable to determine meeting creator' });
+//     }
+
+//     const parsedStart = new Date(startTime);
+//     const parsedEnd = new Date(endTime);
+//     if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) {
+//       return res.status(400).json({ msg: 'Invalid startTime or endTime' });
+//     }
+//     if (parsedEnd.getTime() <= parsedStart.getTime()) {
+//       return res.status(400).json({ msg: 'endTime must be after startTime' });
+//     }
+
+//     const normalizedEmails = Array.from(
+//       new Set(
+//         participantEmails
+//           .map((email) => (typeof email === 'string' ? email.trim().toLowerCase() : ''))
+//           .filter(Boolean)
+//       )
+//     );
+
+//     if (!normalizedEmails.length) {
+//       return res.status(400).json({ msg: 'No valid participant emails provided' });
+//     }
+
+//     const invitedMap = new Map();
+//     if (Array.isArray(invitedFromPayload)) {
+//       invitedFromPayload.forEach((entry) => {
+//         const email = typeof entry?.email === 'string' ? entry.email.trim().toLowerCase() : null;
+//         if (!email) return;
+//         invitedMap.set(email, {
+//           email,
+//           execId: entry.execId || null,
+//           status: entry.status || 'invited',
+//         });
+//       });
+//     }
+
+//     normalizedEmails.forEach((email) => {
+//       if (!invitedMap.has(email)) {
+//         invitedMap.set(email, { email, execId: null, status: 'invited' });
+//       }
+//     });
+
+//     const invited = Array.from(invitedMap.values());
+
+//     const meetingPayload = {
+//       title,
+//       startTime: parsedStart,
+//       endTime: parsedEnd,
+//       venue: venue || '',
+//       project: project || '',
+//       createdBy: creatorId,
+//       participants: [],
+//       invited,
+//       status: 'pending',
+//       hasConflict: false,
+//     };
+
+//     // Ensure creator is part of the meeting and marked accepted if present in invited list
+//     meetingPayload.participants.push(creatorId);
+//     meetingPayload.invited = meetingPayload.invited.map((entry) => {
+//       if (!entry) return entry;
+//       const matchByExec = entry.execId && String(entry.execId) === String(creatorId);
+//       const matchByEmail = entry.email && creatorEmail && entry.email === creatorEmail;
+//       if (matchByExec || matchByEmail) {
+//         return { ...entry, execId: entry.execId || creatorId, status: 'accepted' };
+//       }
+//       return entry;
+//     });
+
+//     const execs = await Executive.find({ email: { $in: normalizedEmails } });
+
+//     if (meetingPayload.invited?.length) {
+//       const emailToId = new Map(execs.map((ex) => [ex.email.toLowerCase(), ex._id]));
+//       meetingPayload.invited = meetingPayload.invited.map((entry) => {
+//         if (!entry) return entry;
+//         if (!entry.execId && entry.email && emailToId.has(entry.email)) {
+//           return { ...entry, execId: emailToId.get(entry.email) };
+//         }
+//         return entry;
+//       });
+//     }
+
+//     const conflictReport = await buildConflictReport({ execs, start: parsedStart, end: parsedEnd });
+
+//     // Conflict path: persist meeting + conflict ticket, skip task creation
+//     if (conflictReport.length) {
+//       const meetingDoc = await Meeting.create({
+//         ...meetingPayload,
+//         status: 'conflict',
+//         hasConflict: true,
+//         conflictStatus: 'open',
+//         conflictNotes: 'Conflict requires secretary intervention',
+//       });
+
+//       const conflictDoc = await Conflict.create({
+//         meeting: meetingDoc._id,
+//         requestedBy: creatorId,
+//         participantEmails: normalizedEmails,
+//         participantIds: execs.map((ex) => ex._id),
+//         overlaps: conflictReport,
+//         history: [
+//           {
+//             action: 'conflict_detected',
+//             notes: 'Scheduling conflict detected during meeting creation',
+//             actor: creatorId,
+//             actorRole: 'executive',
+//           },
+//         ],
+//       });
+
+//       const executiveIdsForNotification = new Set(execs.map((ex) => String(ex._id)));
+//       executiveIdsForNotification.add(String(creatorId));
+
+//       const participantNames = execs
+//         .map((ex) => ex.name || ex.email)
+//         .filter(Boolean)
+//         .join(', ');
+
+//       await notifySecretariesForExecutives({
+//         executiveIds: Array.from(executiveIdsForNotification),
+//         title: `Conflict detected: ${meetingPayload.title}`,
+//         message: `No common slot was available for ${meetingPayload.title}${participantNames ? ` (${participantNames})` : ''}. Please review and coordinate a new time.`,
+//         channel: 'conflict',
+//         severity: 'warning',
+//         meetingId: meetingDoc._id,
+//         conflictId: conflictDoc._id,
+//         metadata: {
+//           meetingTitle: meetingPayload.title,
+//           startTime: parsedStart,
+//           endTime: parsedEnd,
+//           participantEmails: normalizedEmails,
+//         },
+//         emailSubject: `Action required: meeting conflict for ${meetingPayload.title}`,
+//         emailText: `The meeting "${meetingPayload.title}" could not be scheduled automatically.\nParticipants: ${participantNames || normalizedEmails.join(', ')}.\nPlease review the conflict queue to coordinate a new slot.`,
+//       }).catch((err) => console.error('notifySecretariesForExecutives error:', err));
+
+//       const populatedMeeting = await Meeting.findById(meetingDoc._id)
+//         .populate('participants', 'name email department')
+//         .populate('createdBy', 'name email')
+//         .lean();
+
+//       return res.status(202).json({
+//         msg: 'Scheduling conflict detected. Secretary has been notified.',
+//         meeting: populatedMeeting,
+//         conflict: conflictDoc,
+//       });
+//     }
+
+//     // No conflicts: finalize meeting and tasks
+//     const meetingDoc = await Meeting.create(meetingPayload);
+
+//     const execByEmail = {};
+//     execs.forEach((ex) => {
+//       execByEmail[ex.email.toLowerCase()] = ex;
+//     });
+
+//     const updatedExecs = [];
+//     for (const execDoc of execs) {
+//       const hasTask = Array.isArray(execDoc.tasks)
+//         ? execDoc.tasks.some((task) => String(task.meetingId) === String(meetingDoc._id))
+//         : false;
+
+//       if (!hasTask) {
+//         execDoc.tasks.push({
+//           title: meetingDoc.title,
+//           startTime: meetingDoc.startTime,
+//           endTime: meetingDoc.endTime,
+//           description: `Auto-added from meeting ${meetingDoc._id}`,
+//           meetingId: meetingDoc._id,
+//         });
+//       }
+
+//       await execDoc.save();
+
+//       if (!meetingDoc.participants.map(String).includes(String(execDoc._id))) {
+//         meetingDoc.participants.push(execDoc._id);
+//       }
+
+//       const invitedIndex = meetingDoc.invited.findIndex(
+//         (entry) => entry?.email && entry.email.toLowerCase() === execDoc.email.toLowerCase()
+//       );
+//       if (invitedIndex !== -1) {
+//         meetingDoc.invited[invitedIndex].execId = execDoc._id;
+//       }
+
+//       updatedExecs.push({ id: execDoc._id, name: execDoc.name, email: execDoc.email });
+//     }
+
+//     await meetingDoc.save();
+
+//     const populatedMeeting = await Meeting.findById(meetingDoc._id)
+//       .populate('participants', 'name email department tasks')
+//       .populate('createdBy', 'name email')
+//       .lean();
+
+//     // Send notification emails to all participants when meeting is scheduled
+//     try {
+//       const participantEmails = new Set();
+
+//       // include populated participants
+//       if (Array.isArray(populatedMeeting.participants)) {
+//         populatedMeeting.participants.forEach((p) => {
+//           if (p && p.email) participantEmails.add(String(p.email).toLowerCase());
+//         });
+//       }
+
+//       // include invited subdocs with emails
+//       if (Array.isArray(meetingDoc.invited)) {
+//         meetingDoc.invited.forEach((inv) => {
+//           if (inv && inv.email) participantEmails.add(String(inv.email).toLowerCase());
+//         });
+//       }
+
+//       // remove empty
+//       const recipients = Array.from(participantEmails).filter(Boolean);
+
+//       if (recipients.length) {
+//         const subject = `Scheduled: ${meetingDoc.title}`;
+//         const startStr = new Date(meetingDoc.startTime).toLocaleString();
+//         const endStr = new Date(meetingDoc.endTime).toLocaleString();
+//         const organizer = (populatedMeeting && populatedMeeting.createdBy && (populatedMeeting.createdBy.name || populatedMeeting.createdBy.email)) || '';
+//         const text = `The meeting "${meetingDoc.title}" has been scheduled for ${startStr} — ${endStr} at ${meetingDoc.venue || 'N/A'}.
+
+// Organizer: ${organizer}
+
+// This meeting has been added to your calendar.`;
+
+//         // send separately to each recipient so addresses are not exposed
+//         const results = await Promise.allSettled(recipients.map((to) => sendMail({ to, subject, text })));
+//         const failed = results.filter((r) => r.status === 'rejected');
+//         if (failed.length) console.warn('Some schedule emails failed to send', failed.map((f) => (f.reason && f.reason.message) || f));
+//       }
+//     } catch (mailErr) {
+//       console.error('Error sending scheduled emails:', mailErr);
+//     }
+
+//     const notFoundEmails = normalizedEmails.filter((email) => !execByEmail[email]);
+
+//     return res.status(201).json({
+//       meeting: populatedMeeting,
+//       addedTasksTo: updatedExecs,
+//       notFoundEmails,
+//     });
+//   } catch (err) {
+//     console.error('create-and-addtasks error:', err);
+//     return res.status(500).json({ msg: 'Server error', error: err.message });
+//   }
+// });
+
+
+//cancel 
+// POST /api/meetings/:id/cancel
+// backend/routes/meetings.js (or events.js) — replace existing POST /:id/cancel handler with this
+// backend/routes/meetings.js (or events.js)
+// POST /api/meetings/:id/cancel
+// at top of file (make sure this is present)
+
+// Replace your route with this
+// routes/events.js (or wherever your route is)
+// make sure this require is near top of the file:
+
+ // <-- require the mail helper
+// keep auth, Executive, Meeting, Conflict, notifySecretariesForExecutives, etc.
+
+router.post('/create-and-addtasks', auth, async (req, res) => {
   try {
-    const { title, startTime, endTime, venue, project, participantEmails, createdBy } = req.body;
-    if (!title || !startTime || !endTime || !participantEmails || !Array.isArray(participantEmails) || participantEmails.length === 0) {
+    const {
+      title,
+      startTime,
+      endTime,
+      venue,
+      project,
+      participantEmails = [],
+      invited: invitedFromPayload = [],
+      createdBy,
+    } = req.body || {};
+
+    if (!title || !startTime || !endTime || !Array.isArray(participantEmails) || participantEmails.length === 0) {
       return res.status(400).json({ msg: 'Missing required fields' });
     }
 
-    const emails = Array.from(new Set(participantEmails.map(e => (typeof e === 'string' ? e.trim().toLowerCase() : '')).filter(Boolean)));
-    if (!emails.length) return res.status(400).json({ msg: 'No valid participant emails provided' });
-
-    const invited = emails.map(email => ({ email, execId: null, status: 'invited' }));
-// inside router.post('/create-and-addtasks', ...)
-const creatorId = typeof createdBy === 'string' ? createdBy : (createdBy?._id || createdBy);
-
-const meeting = new Meeting({
-  title,
-  startTime: new Date(startTime),
-  endTime: new Date(endTime),
-  venue: venue || '',
-  project: project || '',
-  createdBy: creatorId,
-  participants: [],
-  invited,
-  status: 'pending',
-  notified: false
-});
-// assume meeting is a Mongoose doc (not yet saved) or plain object about to be saved
-// and `createdBy` is the ObjectId (string or ObjectId) of the creator (from req.user.id)
-
-
-// ensure participants contains creatorId
-meeting.participants = meeting.participants || [];
-if (!meeting.participants.map(String).includes(String(creatorId))) {
-  meeting.participants.push(creatorId);
-}
-
-// if invited array exists, mark creator's invited entry as accepted (if present)
-if (Array.isArray(meeting.invited)) {
-  meeting.invited = meeting.invited.map(inv => {
-    try {
-      const execId = inv.execId ? String(inv.execId) : null;
-      const email = inv.email ? String(inv.email).toLowerCase() : null;
-      // match by execId if available, else by email (fallback)
-      if ((execId && String(execId) === String(creatorId)) || (email && email === String(req.user?.email || '').toLowerCase())) {
-        return { ...inv, status: 'accepted' }; // mark accepted for creator
-      }
-      return inv;
-    } catch (e) {
-      return inv;
+    const creatorId = req.user?.id || (typeof createdBy === 'string' ? createdBy : createdBy?._id);
+    const creatorEmail = req.user?.email ? req.user.email.toLowerCase() : null;
+    if (!creatorId) {
+      return res.status(401).json({ msg: 'Unable to determine meeting creator' });
     }
-  });
-}
 
+    const parsedStart = new Date(startTime);
+    const parsedEnd = new Date(endTime);
+    if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) {
+      return res.status(400).json({ msg: 'Invalid startTime or endTime' });
+    }
+    if (parsedEnd.getTime() <= parsedStart.getTime()) {
+      return res.status(400).json({ msg: 'endTime must be after startTime' });
+    }
 
-    await meeting.save();
+    const normalizedEmails = Array.from(
+      new Set(
+        participantEmails
+          .map((email) => (typeof email === 'string' ? email.trim().toLowerCase() : ''))
+          .filter(Boolean)
+      )
+    );
 
-    const execs = await Executive.find({ email: { $in: emails } });
-    const execByEmail = {};
-    for (const ex of execs) execByEmail[ex.email.toLowerCase()] = ex;
+    if (!normalizedEmails.length) {
+      return res.status(400).json({ msg: 'No valid participant emails provided' });
+    }
 
-    const taskObj = {
-      title: meeting.title,
-      startTime: meeting.startTime,
-      endTime: meeting.endTime,
-      description: `Auto-added from meeting ${meeting._id}`,
-      meetingId: meeting._id
+    const invitedMap = new Map();
+    if (Array.isArray(invitedFromPayload)) {
+      invitedFromPayload.forEach((entry) => {
+        const email = typeof entry?.email === 'string' ? entry.email.trim().toLowerCase() : null;
+        if (!email) return;
+        invitedMap.set(email, {
+          email,
+          execId: entry.execId || null,
+          status: entry.status || 'invited',
+        });
+      });
+    }
+
+    normalizedEmails.forEach((email) => {
+      if (!invitedMap.has(email)) {
+        invitedMap.set(email, { email, execId: null, status: 'invited' });
+      }
+    });
+
+    const invited = Array.from(invitedMap.values());
+
+    const meetingPayload = {
+      title,
+      startTime: parsedStart,
+      endTime: parsedEnd,
+      venue: venue || '',
+      project: project || '',
+      createdBy: creatorId,
+      participants: [],
+      invited,
+      status: 'pending',
+      hasConflict: false,
+      notified: false, // optional flag to mark email sent later
     };
 
-    const updatedExecs = [];
-    for (const ex of execs) {
-      const already = Array.isArray(ex.tasks) && ex.tasks.some(t => String(t.meetingId) === String(meeting._id));
-      if (!already) {
-        ex.tasks.push(taskObj);
-        await ex.save();
+    // Ensure creator is part of the meeting and marked accepted if present in invited list
+    meetingPayload.participants.push(creatorId);
+    meetingPayload.invited = meetingPayload.invited.map((entry) => {
+      if (!entry) return entry;
+      const matchByExec = entry.execId && String(entry.execId) === String(creatorId);
+      const matchByEmail = entry.email && creatorEmail && entry.email === creatorEmail;
+      if (matchByExec || matchByEmail) {
+        return { ...entry, execId: entry.execId || creatorId, status: 'accepted' };
       }
-      if (!meeting.participants.map(String).includes(String(ex._id))) meeting.participants.push(ex._id);
-      const invIdx = meeting.invited.findIndex(i => i.email && i.email.toLowerCase() === ex.email.toLowerCase());
-      if (invIdx !== -1) meeting.invited[invIdx].execId = ex._id;
-      updatedExecs.push({ id: ex._id, name: ex.name, email: ex.email });
+      return entry;
+    });
+
+    const execs = await Executive.find({ email: { $in: normalizedEmails } });
+
+    if (meetingPayload.invited?.length) {
+      const emailToId = new Map(execs.map((ex) => [ex.email.toLowerCase(), ex._id]));
+      meetingPayload.invited = meetingPayload.invited.map((entry) => {
+        if (!entry) return entry;
+        if (!entry.execId && entry.email && emailToId.has(entry.email)) {
+          return { ...entry, execId: emailToId.get(entry.email) };
+        }
+        return entry;
+      });
     }
 
-    await meeting.save();
+    const conflictReport = await buildConflictReport({ execs, start: parsedStart, end: parsedEnd });
 
-    const populated = await Meeting.findById(meeting._id).populate('participants', 'name email department tasks').populate('createdBy', 'name email').lean();
-    const notFoundEmails = emails.filter(e => !execByEmail[e]);
+    // Conflict path: persist meeting + conflict ticket, skip task creation
+    if (conflictReport.length) {
+      const meetingDoc = await Meeting.create({
+        ...meetingPayload,
+        status: 'conflict',
+        hasConflict: true,
+        conflictStatus: 'open',
+        conflictNotes: 'Conflict requires secretary intervention',
+      });
 
-    return res.status(201).json({ meeting: populated, addedTasksTo: updatedExecs, notFoundEmails });
+      const conflictDoc = await Conflict.create({
+        meeting: meetingDoc._id,
+        requestedBy: creatorId,
+        participantEmails: normalizedEmails,
+        participantIds: execs.map((ex) => ex._id),
+        overlaps: conflictReport,
+        history: [
+          {
+            action: 'conflict_detected',
+            notes: 'Scheduling conflict detected during meeting creation',
+            actor: creatorId,
+            actorRole: 'executive',
+          },
+        ],
+      });
+
+      const executiveIdsForNotification = new Set(execs.map((ex) => String(ex._id)));
+      executiveIdsForNotification.add(String(creatorId));
+
+      const participantNames = execs
+        .map((ex) => ex.name || ex.email)
+        .filter(Boolean)
+        .join(', ');
+
+      await notifySecretariesForExecutives({
+        executiveIds: Array.from(executiveIdsForNotification),
+        title: `Conflict detected: ${meetingPayload.title}`,
+        message: `No common slot was available for ${meetingPayload.title}${participantNames ? ` (${participantNames})` : ''}. Please review and coordinate a new time.`,
+        channel: 'conflict',
+        severity: 'warning',
+        meetingId: meetingDoc._id,
+        conflictId: conflictDoc._id,
+        metadata: {
+          meetingTitle: meetingPayload.title,
+          startTime: parsedStart,
+          endTime: parsedEnd,
+          participantEmails: normalizedEmails,
+        },
+        emailSubject: `Action required: meeting conflict for ${meetingPayload.title}`,
+        emailText: `The meeting "${meetingPayload.title}" could not be scheduled automatically.\nParticipants: ${participantNames || normalizedEmails.join(', ')}.\nPlease review the conflict queue to coordinate a new slot.`,
+      }).catch((err) => console.error('notifySecretariesForExecutives error:', err));
+
+      // Send emails to participants notifying of the conflict (non-blocking)
+      (async () => {
+        try {
+          const conflictSubject = `Scheduling conflict: ${meetingPayload.title}`;
+          const conflictText = `We could not automatically find a common time slot for "${meetingPayload.title}" scheduled for ${parsedStart.toISOString()} - ${parsedEnd.toISOString()}.
+Secretaries have been notified to coordinate a new time.`;
+          // send only to valid normalized emails
+          await sendMail({
+            to: normalizedEmails,
+            subject: conflictSubject,
+            text: conflictText,
+          });
+        } catch (mailErr) {
+          console.error('Error sending conflict email to participants:', mailErr);
+        }
+      })();
+
+      const populatedMeeting = await Meeting.findById(meetingDoc._1)
+        .populate('participants', 'name email department')
+        .populate('createdBy', 'name email')
+        .lean();
+
+      return res.status(202).json({
+        msg: 'Scheduling conflict detected. Secretary has been notified.',
+        meeting: populatedMeeting,
+        conflict: conflictDoc,
+      });
+    }
+
+    // No conflicts: finalize meeting and tasks
+    const meetingDoc = await Meeting.create(meetingPayload);
+
+    const execByEmail = {};
+    execs.forEach((ex) => {
+      execByEmail[ex.email.toLowerCase()] = ex;
+    });
+
+    const updatedExecs = [];
+    for (const execDoc of execs) {
+      const hasTask = Array.isArray(execDoc.tasks)
+        ? execDoc.tasks.some((task) => String(task.meetingId) === String(meetingDoc._id))
+        : false;
+
+      if (!hasTask) {
+        execDoc.tasks.push({
+          title: meetingDoc.title,
+          startTime: meetingDoc.startTime,
+          endTime: meetingDoc.endTime,
+          description: `Auto-added from meeting ${meetingDoc._id}`,
+          meetingId: meetingDoc._id,
+        });
+      }
+
+      await execDoc.save();
+
+      if (!meetingDoc.participants.map(String).includes(String(execDoc._id))) {
+        meetingDoc.participants.push(execDoc._id);
+      }
+
+      const invitedIndex = meetingDoc.invited.findIndex(
+        (entry) => entry?.email && entry.email.toLowerCase() === execDoc.email.toLowerCase()
+      );
+      if (invitedIndex !== -1) {
+        meetingDoc.invited[invitedIndex].execId = execDoc._id;
+      }
+
+      updatedExecs.push({ id: execDoc._id, name: execDoc.name, email: execDoc.email });
+    }
+
+    await meetingDoc.save();
+
+    // Send meeting notification emails (non-blocking)
+   (async () => {
+  try {
+    const meetingDate = new Date(meetingDoc.startTime).toLocaleDateString();
+    const meetingStart = new Date(meetingDoc.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const meetingEnd = new Date(meetingDoc.endTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    const participantList = normalizedEmails.join(', ');
+
+    const subject = `📅 Meeting Scheduled: ${meetingDoc.title} — ${meetingDate} ${meetingStart}`;
+
+    const text =
+`Dear Participant,
+
+You are invited to the meeting:
+
+📝 Title: ${meetingDoc.title}
+📅 Date: ${meetingDate}
+⏰ Time: ${meetingStart} – ${meetingEnd}
+📍 Venue: ${meetingDoc.venue || "TBD"}
+📂 Project: ${meetingDoc.project || "N/A"}
+
+Please open the TMS app to view full details or RSVP.
+
+Thank you,
+TMS – Meeting Scheduler`;
+
+    await sendMail({
+      to: normalizedEmails,
+      subject,
+      text,
+    });
+
+    meetingDoc.notified = true;
+    await meetingDoc.save();
+  } catch (mailErr) {
+    console.error("Error sending meeting notification emails:", mailErr);
+  }
+})();
+
+
+    const populatedMeeting = await Meeting.findById(meetingDoc._id)
+      .populate('participants', 'name email department tasks')
+      .populate('createdBy', 'name email')
+      .lean();
+
+    const notFoundEmails = normalizedEmails.filter((email) => !execByEmail[email]);
+
+    return res.status(201).json({
+      meeting: populatedMeeting,
+      addedTasksTo: updatedExecs,
+      notFoundEmails,
+      emailsSent: !!meetingDoc.notified, // best-effort status
+    });
   } catch (err) {
     console.error('create-and-addtasks error:', err);
     return res.status(500).json({ msg: 'Server error', error: err.message });
   }
 });
 
-// at top of file make sure you have these requires:
-// const express = require('express');
-// const router = express.Router();
-// const Meeting = require('../schema/EventSchema'); // adjust path as needed
-// const auth = require('../authMiddleware'); // your auth middleware
 
-// router.post('/create-and-addtasks', auth, async (req, res) => {
+
+
+// router.post('/:id/cancel', auth, async (req, res) => {
 //   try {
-//     // 1) Basic data and auth
-//     const userId = req.user?.id; // the creator's id (ObjectId string)
+//     const meetingId = req.params.id;
+//     const userId = req.user?.id;
 //     const userEmail = (req.user?.email || '').toLowerCase();
-//     if (!userId) return res.status(401).json({ msg: 'Not authenticated' });
 
-//     const {
-//       title = 'Untitled',
-//       startTime,
-//       endTime,
-//       venue = '',
-//       project = '',
-//       participantEmails = [], // expected array of emails
-//       invited = [], // optional invited array objects { email, execId, status }
-//     } = req.body || {};
+//     const meeting = await Meeting.findById(meetingId);
+//     if (!meeting) return res.status(404).json({ msg: 'Meeting not found' });
 
-//     // Validate times
-//     const parsedStart = startTime ? new Date(startTime) : null;
-//     const parsedEnd = endTime ? new Date(endTime) : null;
-//     if (!parsedStart || isNaN(parsedStart.getTime())) return res.status(400).json({ msg: 'Invalid startTime' });
-//     if (!parsedEnd || isNaN(parsedEnd.getTime())) return res.status(400).json({ msg: 'Invalid endTime' });
-//     if (parsedEnd.getTime() <= parsedStart.getTime()) return res.status(400).json({ msg: 'endTime must be after startTime' });
-
-//     // 2) Normalize participant emails into invited entries
-//     const normalizedParticipantEmails = Array.isArray(participantEmails)
-//       ? participantEmails.map(e => (e || '').toLowerCase()).filter(Boolean)
-//       : [];
-
-//     // Build invited array while preserving any execId if present
-//     const invitedFromPayload = Array.isArray(invited)
-//       ? invited.map(item => ({
-//           email: (item.email || '').toLowerCase() || undefined,
-//           execId: item.execId || null,
-//           status: item.status || 'invited',
-//         }))
-//       : [];
-
-//     // Merge both sources (explicit invited + participantEmails)
-//     const invitedMap = new Map();
-//     invitedFromPayload.forEach(i => {
-//       if (i.email) invitedMap.set(i.email, { email: i.email, execId: i.execId || null, status: i.status || 'invited' });
-//     });
-//     normalizedParticipantEmails.forEach(email => {
-//       if (!invitedMap.has(email)) invitedMap.set(email, { email, execId: null, status: 'invited' });
-//     });
-
-//     const finalInvited = Array.from(invitedMap.values());
-
-//     // 3) Prepare meeting object
-//     const meetingObj = {
-//       title,
-//       startTime: parsedStart,
-//       endTime: parsedEnd,
-//       venue,
-//       project,
-//       invited: finalInvited,
-//       participants: [], // will push creator below
-//       createdBy: userId,
-//       status: 'pending',
-//     };
-
-//     // 4) Ensure creator is accepted by default:
-//     //   - add creatorId to participants
-//     //   - if invited list contains creator email/execId, mark that entry as 'accepted'
-//     const creatorId = userId; // declare before using (prevents hoisting errors)
-//     meetingObj.participants = meetingObj.participants || [];
-//     if (!meetingObj.participants.map(String).includes(String(creatorId))) {
-//       meetingObj.participants.push(creatorId);
+//     // Only creator can cancel
+//     if (!meeting.createdBy || String(meeting.createdBy) !== String(userId)) {
+//       return res.status(403).json({ msg: 'Only the meeting creator may cancel the meeting' });
 //     }
 
-//     // Mark invited entry for creator as accepted (if it exists by execId or email)
-//     const normalizedCreatorEmail = (userEmail || '').toLowerCase();
-//     if (Array.isArray(meetingObj.invited)) {
-//       meetingObj.invited = meetingObj.invited.map(inv => {
-//         const invEmail = inv.email ? String(inv.email).toLowerCase() : null;
-//         const invExecId = inv.execId ? String(inv.execId) : null;
-//         if ((invExecId && String(invExecId) === String(creatorId)) || (invEmail && invEmail === normalizedCreatorEmail)) {
-//           return { ...inv, status: 'accepted' };
-//         }
-//         return inv;
+//     // If already cancelled — return populated meeting
+//     if (meeting.status === 'cancelled') {
+//       const populatedAgain = await Meeting.findById(meeting._id)
+//         .populate('participants', 'name email')
+//         .populate('createdBy', 'name email')
+//         .lean();
+//       return res.json({ meeting: populatedAgain, msg: 'Already cancelled' });
+//     }
+
+//     // Mark meeting cancelled + metadata
+//     meeting.status = 'cancelled';
+//     meeting.cancelledAt = new Date();
+//     meeting.cancelledBy = userId;
+//     meeting.cancelledByEmail = userEmail;
+
+//     // Update invited subdocs in-place so Mongoose validates & persists
+//     if (Array.isArray(meeting.invited)) {
+//       meeting.invited.forEach(inv => {
+//         inv.status = 'cancelled';
 //       });
 //     }
 
-//     // 5) Create & save meeting
-//     const meetingDoc = await Meeting.create(meetingObj);
+//     await meeting.save();
 
-//     // 6) populate createdBy and participants for response
-//     const populated = await Meeting.findById(meetingDoc._id)
+//     // OPTIONAL: update Executive.tasks entries tied to this meeting (if you store meetingId in tasks)
+//     try {
+//       const execIds = new Set();
+
+//       if (Array.isArray(meeting.invited)) {
+//         meeting.invited.forEach(inv => { if (inv.execId) execIds.add(String(inv.execId)); });
+//       }
+//       if (Array.isArray(meeting.participants)) {
+//         meeting.participants.forEach(p => { if (p) execIds.add(String(p)); });
+//       }
+
+//       if (execIds.size > 0) {
+//         const execArray = Array.from(execIds);
+//         const execs = await Executive.find({ _id: { $in: execArray } });
+
+//         for (const ex of execs) {
+//           let changed = false;
+//           if (Array.isArray(ex.tasks)) {
+//             ex.tasks = ex.tasks.map(task => {
+//               if (String(task.meetingId) === String(meeting._id)) {
+//                 changed = true;
+//                 return { ...task, status: 'cancelled', cancelledAt: new Date(), cancelledBy: userId };
+//               }
+//               return task;
+//             });
+//           }
+//           if (changed) await ex.save();
+//         }
+//       }
+//     } catch (errTasks) {
+//       console.error('Error updating Executive.tasks after meeting cancel:', errTasks);
+//     }
+
+//     const populated = await Meeting.findById(meeting._id)
 //       .populate('participants', 'name email')
 //       .populate('createdBy', 'name email')
 //       .lean();
 
-//     return res.json({ meeting: populated });
+//     return res.json({ msg: 'Meeting cancelled', meeting: populated });
 //   } catch (err) {
-//     console.error('create-and-addtasks error:', err);
-//     // friendly error
-//     return res.status(500).json({ error: err.message || 'Server error' });
+//     console.error('cancel meeting error', err);
+//     return res.status(500).json({ error: err.message });
 //   }
 // });
+router.post('/:id/cancel', auth, async (req, res) => {
+  try {
+    const meetingId = req.params.id;
+    const userId = req.user?.id;
+    const userEmail = (req.user?.email || '').toLowerCase();
+    const userName = req.user?.name || req.user?.email || 'Organizer';
+
+    const meeting = await Meeting.findById(meetingId);
+    if (!meeting) return res.status(404).json({ msg: 'Meeting not found' });
+
+    // Only creator can cancel
+    if (!meeting.createdBy || String(meeting.createdBy) !== String(userId)) {
+      return res.status(403).json({ msg: 'Only the meeting creator may cancel the meeting' });
+    }
+
+    // If already cancelled — return populated meeting
+    if (meeting.status === 'cancelled') {
+      const populatedAgain = await Meeting.findById(meeting._id)
+        .populate('participants', 'name email')
+        .populate('createdBy', 'name email')
+        .lean();
+      return res.json({ meeting: populatedAgain, msg: 'Already cancelled' });
+    }
+
+    // Mark meeting cancelled + metadata
+    meeting.status = 'cancelled';
+    meeting.cancelledAt = new Date();
+    meeting.cancelledBy = userId;
+    meeting.cancelledByEmail = userEmail;
+
+    if (Array.isArray(meeting.invited)) {
+      meeting.invited.forEach(inv => { inv.status = 'cancelled'; });
+    }
+
+    await meeting.save();
+
+    // OPTIONAL: update Executive.tasks entries tied to this meeting
+    try {
+      const execIds = new Set();
+      if (Array.isArray(meeting.invited)) meeting.invited.forEach(inv => { if (inv.execId) execIds.add(String(inv.execId)); });
+      if (Array.isArray(meeting.participants)) meeting.participants.forEach(p => { if (p) execIds.add(String(p)); });
+
+      if (execIds.size > 0) {
+        const execArray = Array.from(execIds);
+        const execs = await Executive.find({ _id: { $in: execArray } });
+        for (const ex of execs) {
+          let changed = false;
+          if (Array.isArray(ex.tasks)) {
+            ex.tasks = ex.tasks.map(task => {
+              if (String(task.meetingId) === String(meeting._id)) {
+                changed = true;
+                return { ...task, status: 'cancelled', cancelledAt: new Date(), cancelledBy: userId };
+              }
+              return task;
+            });
+          }
+          if (changed) await ex.save();
+        }
+      }
+    } catch (errTasks) {
+      console.error('Error updating Executive.tasks after meeting cancel:', errTasks);
+    }
+
+    // Build recipient list: invited emails + participants' emails + creator
+    const invitedEmailsFromPayload = Array.isArray(meeting.invited)
+      ? meeting.invited.map(i => (i && i.email ? i.email.toLowerCase() : null)).filter(Boolean)
+      : [];
+
+    // participants may be ObjectIds; try to fetch emails for participants in DB
+    let participantEmailsFromDocs = [];
+    if (Array.isArray(meeting.participants) && meeting.participants.length) {
+      try {
+        const participantDocs = await Executive.find({ _id: { $in: meeting.participants } }, 'email');
+        participantEmailsFromDocs = participantDocs.map(p => p.email && p.email.toLowerCase()).filter(Boolean);
+      } catch (pErr) {
+        console.error('Error fetching participant emails for cancellation:', pErr);
+      }
+    }
+
+    const creatorEmail = meeting.createdByEmail || userEmail;
+    const allEmailsSet = new Set([...invitedEmailsFromPayload, ...participantEmailsFromDocs]);
+    if (creatorEmail) allEmailsSet.add(creatorEmail);
+    const allEmails = Array.from(allEmailsSet).filter(Boolean);
+
+    // --- Format meeting date/time for emails (guarded & timezone-aware) ---
+    const safeStart = meeting.startTime ? new Date(meeting.startTime) : null;
+    const safeEnd = meeting.endTime ? new Date(meeting.endTime) : null;
+
+    const tz = 'Asia/Kolkata'; // change if you need a different timezone
+    const meetingDate = safeStart && !Number.isNaN(safeStart.getTime())
+      ? safeStart.toLocaleDateString('en-IN', { timeZone: tz })
+      : 'TBD';
+
+    const meetingStart = safeStart && !Number.isNaN(safeStart.getTime())
+      ? safeStart.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: tz })
+      : 'TBD';
+
+    const meetingEnd = safeEnd && !Number.isNaN(safeEnd.getTime())
+      ? safeEnd.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: tz })
+      : 'TBD';
+
+    // Send cancellation email (best-effort)
+    if (allEmails.length) {
+      const safeTitle = meeting.title || 'Meeting';
+      const subject = `❗ Meeting Cancelled: ${safeTitle} — ${meetingDate} ${meetingStart}`;
+
+      const text =
+`Dear Participant,
+
+The following meeting has been cancelled:
+
+📝 Title: ${safeTitle}
+📅 Date: ${meetingDate}
+⏰ Time: ${meetingStart} – ${meetingEnd}
+📍 Venue: ${meeting.venue || "TBD"}
+❗ Cancelled By: ${userName}
+💬 Reason: ${meeting.cancellationReason || "Not Provided"}
+
+Please open the TMS app for more details.
+
+Thank you,
+TMS – Meeting Scheduler`;
+
+      try {
+        console.log('Sending cancellation email to:', allEmails, 'subject:', subject);
+
+        // Ensure sendMail is awaited so any errors are caught here
+        await sendMail({ to: allEmails, subject, text });
+
+        console.log('Cancellation emails attempted');
+      } catch (mailErr) {
+        console.error('Error sending cancellation emails:', mailErr);
+        // do not undo cancellation because of email failure
+      }
+    } else {
+      console.log('No recipient emails found for meeting cancellation:', meeting._id);
+    }
+
+    const populated = await Meeting.findById(meeting._id)
+      .populate('participants', 'name email')
+      .populate('createdBy', 'name email')
+      .lean();
+
+    return res.json({ msg: 'Meeting cancelled', meeting: populated });
+  } catch (err) {
+    console.error('cancel meeting error', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+
+router.post('/conflicts/manual', auth, async (req, res) => {
+  try {
+    const {
+      title,
+      startTime,
+      endTime,
+      participantEmails = [],
+      venue = '',
+      project = '',
+      notes = '',
+      overlaps = [],
+    } = req.body || {};
+
+    if (!title || !startTime || !endTime) {
+      return res.status(400).json({ msg: 'title, startTime, and endTime are required' });
+    }
+
+    const parsedStart = new Date(startTime);
+    const parsedEnd = new Date(endTime);
+    if (Number.isNaN(parsedStart.getTime()) || Number.isNaN(parsedEnd.getTime())) {
+      return res.status(400).json({ msg: 'Invalid startTime or endTime' });
+    }
+    if (parsedEnd.getTime() <= parsedStart.getTime()) {
+      return res.status(400).json({ msg: 'endTime must be after startTime' });
+    }
+
+    const normalizedEmails = Array.from(
+      new Set(
+        (Array.isArray(participantEmails) ? participantEmails : [])
+          .map((email) => (typeof email === 'string' ? email.trim().toLowerCase() : ''))
+          .filter(Boolean)
+      )
+    );
+
+    const creatorId = req.user?.id || null;
+    const creatorEmail = typeof req.user?.email === 'string' ? req.user.email.toLowerCase() : null;
+    if (creatorEmail && !normalizedEmails.includes(creatorEmail)) {
+      normalizedEmails.push(creatorEmail);
+    }
+
+    if (!normalizedEmails.length) {
+      return res.status(400).json({ msg: 'At least one participant email is required' });
+    }
+
+    const execs = await Executive.find({ email: { $in: normalizedEmails } }).lean();
+
+    const conflictReport = await buildConflictReport({ execs, start: parsedStart, end: parsedEnd });
+
+    const overlapsMap = new Map();
+
+    const addOverlap = ({ execDoc, email, conflicts }) => {
+      const resolvedEmail = email || (execDoc?.email ? execDoc.email.toLowerCase() : null);
+      const key = execDoc ? String(execDoc._id) : resolvedEmail;
+      if (!key) return;
+
+      if (!overlapsMap.has(key)) {
+        overlapsMap.set(key, {
+          executive: execDoc ? execDoc._id : undefined,
+          executiveEmail: resolvedEmail,
+          conflicts: [],
+        });
+      }
+
+      const target = overlapsMap.get(key);
+      (conflicts || []).forEach((item) => {
+        const prepared = normalizeConflictItem(item, item?.type || 'task');
+        if (prepared) {
+          target.conflicts.push(prepared);
+        }
+      });
+    };
+
+    conflictReport.forEach((entry) => {
+      const execDoc = execs.find((ex) => String(ex._id) === String(entry.executive));
+      addOverlap({
+        execDoc,
+        email: entry.executiveEmail || (execDoc?.email ? execDoc.email.toLowerCase() : null),
+        conflicts: entry.conflicts,
+      });
+    });
+
+    const providedOverlaps = Array.isArray(overlaps) ? overlaps : [];
+    providedOverlaps.forEach((entry) => {
+      const emailCandidate =
+        typeof entry?.executiveEmail === 'string'
+          ? entry.executiveEmail.trim().toLowerCase()
+          : typeof entry?.email === 'string'
+          ? entry.email.trim().toLowerCase()
+          : null;
+      const execDoc = emailCandidate
+        ? execs.find((ex) => ex.email && ex.email.toLowerCase() === emailCandidate)
+        : null;
+      addOverlap({
+        execDoc,
+        email: emailCandidate,
+        conflicts: Array.isArray(entry?.conflicts) ? entry.conflicts : [],
+      });
+    });
+
+    const overlapsPayload = Array.from(overlapsMap.values())
+      .map((entry) => ({
+        executive: entry.executive,
+        executiveEmail: entry.executiveEmail,
+        conflicts: entry.conflicts,
+      }))
+      .filter((entry) => entry.conflicts.length > 0);
+
+    if (!overlapsPayload.length) {
+      return res.status(409).json({ msg: 'No conflicts detected for the provided time range.' });
+    }
+
+    const invited = normalizedEmails.map((email) => {
+      const execDoc = execs.find((ex) => ex.email && ex.email.toLowerCase() === email);
+      return {
+        email,
+        execId: execDoc ? execDoc._id : null,
+        status: 'invited',
+      };
+    });
+
+    const meetingDoc = await Meeting.create({
+      title,
+      startTime: parsedStart,
+      endTime: parsedEnd,
+      venue,
+      project,
+      createdBy: creatorId,
+      participants: creatorId ? [creatorId] : [],
+      invited,
+      status: 'conflict',
+      hasConflict: true,
+      conflictStatus: 'open',
+      conflictNotes: notes || 'Awaiting secretary coordination',
+    });
+
+    const conflictDoc = await Conflict.create({
+      meeting: meetingDoc._id,
+      requestedBy: creatorId,
+      participantEmails: normalizedEmails,
+      participantIds: execs.map((ex) => ex._id),
+      conflictReason: notes || 'Scheduling overlap reported by executive',
+      overlaps: overlapsPayload,
+      history: [
+        {
+          action: 'manual_conflict_logged',
+          notes: notes || 'Conflict logged via executive request',
+          actor: creatorId,
+          actorRole: 'executive',
+        },
+      ],
+    });
+
+    const executiveIdsForNotification = new Set(execs.map((ex) => String(ex._id)));
+    if (creatorId) executiveIdsForNotification.add(String(creatorId));
+
+    const participantNames = execs
+      .map((ex) => ex.name || ex.email)
+      .filter(Boolean)
+      .join(', ');
+
+    await notifySecretariesForExecutives({
+      executiveIds: Array.from(executiveIdsForNotification),
+      title: `Manual conflict: ${title}`,
+      message: `A manual conflict has been logged for ${title}. Please review the conflict queue.`,
+      channel: 'conflict',
+      severity: 'warning',
+      meetingId: meetingDoc._id,
+      conflictId: conflictDoc._id,
+      metadata: {
+        meetingTitle: title,
+        startTime: parsedStart,
+        endTime: parsedEnd,
+        participantEmails: normalizedEmails,
+      },
+      emailSubject: `Manual conflict logged for ${title}`,
+      emailText: `The meeting "${title}" could not be scheduled automatically. Participants: ${
+        participantNames || normalizedEmails.join(', ')
+      }.`,
+    }).catch((err) => console.error('notifySecretariesForExecutives manual conflict error:', err));
+
+    const populatedConflict = await Conflict.findById(conflictDoc._id)
+      .populate('meeting', 'title startTime endTime status conflictStatus venue project')
+      .populate('requestedBy', 'name email')
+      .populate('overlaps.executive', 'name email')
+      .lean();
+
+    const populatedMeeting = await Meeting.findById(meetingDoc._id)
+      .populate('participants', 'name email')
+      .lean();
+
+    return res.status(201).json({
+      msg: 'Conflict logged and secretary notified.',
+      meeting: populatedMeeting,
+      conflict: populatedConflict,
+    });
+  } catch (err) {
+    console.error('POST /api/events/conflicts/manual error:', err);
+    return res.status(500).json({ msg: 'Server error', error: err.message });
+  }
+});
+
+
 
 
   // backend/routes/meetings.js (or events.js) - update my-day route
@@ -259,93 +1189,6 @@ router.get('/my-day', auth, async (req, res) => {
 });
 
 
-//cancel 
-// POST /api/meetings/:id/cancel
-// backend/routes/meetings.js (or events.js) — replace existing POST /:id/cancel handler with this
-// backend/routes/meetings.js (or events.js)
-// POST /api/meetings/:id/cancel
-router.post('/:id/cancel', auth, async (req, res) => {
-  try {
-    const meetingId = req.params.id;
-    const userId = req.user?.id;
-    const userEmail = (req.user?.email || '').toLowerCase();
-
-    const meeting = await Meeting.findById(meetingId);
-    if (!meeting) return res.status(404).json({ msg: 'Meeting not found' });
-
-    // Only creator can cancel
-    if (!meeting.createdBy || String(meeting.createdBy) !== String(userId)) {
-      return res.status(403).json({ msg: 'Only the meeting creator may cancel the meeting' });
-    }
-
-    // If already cancelled — return populated meeting
-    if (meeting.status === 'cancelled') {
-      const populatedAgain = await Meeting.findById(meeting._id)
-        .populate('participants', 'name email')
-        .populate('createdBy', 'name email')
-        .lean();
-      return res.json({ meeting: populatedAgain, msg: 'Already cancelled' });
-    }
-
-    // Mark meeting cancelled + metadata
-    meeting.status = 'cancelled';
-    meeting.cancelledAt = new Date();
-    meeting.cancelledBy = userId;
-    meeting.cancelledByEmail = userEmail;
-
-    // Update invited subdocs in-place so Mongoose validates & persists
-    if (Array.isArray(meeting.invited)) {
-      meeting.invited.forEach(inv => {
-        inv.status = 'cancelled';
-      });
-    }
-
-    await meeting.save();
-
-    // OPTIONAL: update Executive.tasks entries tied to this meeting (if you store meetingId in tasks)
-    try {
-      const execIds = new Set();
-
-      if (Array.isArray(meeting.invited)) {
-        meeting.invited.forEach(inv => { if (inv.execId) execIds.add(String(inv.execId)); });
-      }
-      if (Array.isArray(meeting.participants)) {
-        meeting.participants.forEach(p => { if (p) execIds.add(String(p)); });
-      }
-
-      if (execIds.size > 0) {
-        const execArray = Array.from(execIds);
-        const execs = await Executive.find({ _id: { $in: execArray } });
-
-        for (const ex of execs) {
-          let changed = false;
-          if (Array.isArray(ex.tasks)) {
-            ex.tasks = ex.tasks.map(task => {
-              if (String(task.meetingId) === String(meeting._id)) {
-                changed = true;
-                return { ...task, status: 'cancelled', cancelledAt: new Date(), cancelledBy: userId };
-              }
-              return task;
-            });
-          }
-          if (changed) await ex.save();
-        }
-      }
-    } catch (errTasks) {
-      console.error('Error updating Executive.tasks after meeting cancel:', errTasks);
-    }
-
-    const populated = await Meeting.findById(meeting._id)
-      .populate('participants', 'name email')
-      .populate('createdBy', 'name email')
-      .lean();
-
-    return res.json({ msg: 'Meeting cancelled', meeting: populated });
-  } catch (err) {
-    console.error('cancel meeting error', err);
-    return res.status(500).json({ error: err.message });
-  }
-});
 
 
 const ALLOWED = new Set(['accepted', 'declined', 'tentative']);

@@ -30,6 +30,11 @@ export default function SecretaryLayout() {
   const { isDark, toggleTheme } = useContext(ThemeContext);
   const [activeView, setActiveView] = useState("Dashboard");
   const [collapsed, setCollapsed] = useState(false);
+  const [user, setUser] = useState(null);
+  const [loadingUser, setLoadingUser] = useState(false);
+  const [userError, setUserError] = useState(null);
+
+  const API_BASE = "http://localhost:5000";
 
   // keep track of viewport >= md
   const [isDesktop, setIsDesktop] = useState(typeof window !== "undefined" ? window.innerWidth >= 768 : true);
@@ -37,8 +42,43 @@ export default function SecretaryLayout() {
     const token = localStorage.getItem('token');
     if (!token) {
       navigate('/signin');
+      return;
     }
-  }, []);
+
+    async function fetchSecretary() {
+      setLoadingUser(true);
+      setUserError(null);
+      try {
+        const res = await fetch(`${API_BASE}/api/secretary/me`, {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (res.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('role');
+          navigate('/signin');
+          return;
+        }
+
+        const data = await res.json();
+        const secretaryData = data?.secretary ?? data;
+        setUser(secretaryData);
+        if (secretaryData?.email) localStorage.setItem('userEmail', secretaryData.email);
+        if (secretaryData?._id) localStorage.setItem('userId', secretaryData._id);
+        localStorage.setItem('role', 'secretary');
+      } catch (err) {
+        console.error('Failed to fetch secretary profile', err);
+        setUserError('Unable to fetch secretary profile');
+      } finally {
+        setLoadingUser(false);
+      }
+    }
+
+    fetchSecretary();
+  }, [API_BASE, navigate]);
   useEffect(() => {
     const onResize = () => setIsDesktop(window.innerWidth >= 768);
     onResize();
@@ -48,7 +88,6 @@ export default function SecretaryLayout() {
 
   const navItems = [
     { name: "Dashboard", icon: Home },
-    { name: "Schedule Meeting", icon: Calendar },
     { name: "Rearrange Appointments", icon: Users },
     { name: "Reports", icon: BarChart2 },
     { name: "Notifications", icon: Bell },
@@ -56,9 +95,12 @@ export default function SecretaryLayout() {
 
   const handleLogout = () => 
   {
-     console.log("Logout clicked");
-        localStorage.removeItem("token");
-        navigate("/signin");
+    console.log("Logout clicked");
+      localStorage.removeItem("token");
+      localStorage.removeItem("role");
+      localStorage.removeItem("userEmail");
+      localStorage.removeItem("userId");
+      navigate("/signin");
   }
 
   // Tailwind classes for widths/margins (keep consistent with ExecutiveLayout)
@@ -80,6 +122,23 @@ export default function SecretaryLayout() {
             TMS
           </h1>
           {!collapsed && <span className="text-sm text-gray-500 mt-1">Role: Secretary</span>}
+
+          {!collapsed && (
+            <div className={`mt-4 w-full p-3 rounded-lg border ${isDark ? "bg-slate-900/60 border-slate-700" : "bg-white border-slate-200"}`}>
+              {loadingUser ? (
+                <p className="text-xs text-gray-400">Loading profile…</p>
+              ) : userError ? (
+                <p className="text-xs text-red-500">{userError}</p>
+              ) : user ? (
+                <div>
+                  <p className="text-sm font-semibold">{user.name}</p>
+                  <p className="text-xs text-gray-500">{user.email}</p>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400">No profile info</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Navigation */}
@@ -139,7 +198,7 @@ export default function SecretaryLayout() {
         <header className={`md:hidden flex justify-between items-center p-4 border-b transition-all ${isDark ? "border-gray-800 bg-gray-900" : "border-gray-200 bg-white shadow-sm"}`}>
           <div className="flex flex-col">
             <h1 className="font-bold text-xl text-indigo-600">TMS - Secretary</h1>
-            <span className="text-sm text-gray-500 mt-1">Role: Secretary</span>
+            <span className="text-sm text-gray-500 mt-1">{user?.name ? user.name : 'Role: Secretary'}</span>
           </div>
           <div className="flex items-center gap-2">
             <Button onClick={toggleTheme} variant="outline" size="sm" className="p-2 rounded-full">
@@ -153,9 +212,9 @@ export default function SecretaryLayout() {
 
         {/* Main content area (scrollable) */}
         <main className={`flex-1 p-4 md:p-6 overflow-y-auto`}>
-          {activeView === "Dashboard" && <SecretaryDashboard />}
-          {activeView === "Schedule Meeting" && <ScheduleMeeting />}
-          {activeView === "Rearrange Appointments" && <RearrangeAppointments />}
+          {activeView === "Dashboard" && <SecretaryDashboard user={user} loading={loadingUser} />}
+          {activeView === "Schedule Meeting" && <ScheduleMeeting user={user} loading={loadingUser} />}
+          {activeView === "Rearrange Appointments" && <RearrangeAppointments user={user} loading={loadingUser} />}
           {activeView === "Reports" && <Reports />}
           {activeView === "Notifications" && <Notifications />}
         </main>
